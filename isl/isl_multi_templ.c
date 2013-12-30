@@ -8,6 +8,10 @@
  * Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
+#include <isl_space_private.h>
+#include <isl/set.h>
+#include <isl_reordering.h>
+
 #define xCAT(A,B) A ## B
 #define CAT(A,B) xCAT(A,B)
 #undef EL
@@ -223,16 +227,8 @@ __isl_give MULTI(BASE) *FN(FN(MULTI(BASE),set),BASE)(
 		goto error;
 
 	multi_space = FN(MULTI(BASE),get_space)(multi);
-	el_space = FN(EL,get_space)(el);
-
-	if (!isl_space_match(multi_space, isl_dim_param,
-			    el_space, isl_dim_param))
-		isl_die(FN(MULTI(BASE),get_ctx)(multi), isl_error_invalid,
-			"parameters don't match", goto error);
-	if (!isl_space_tuple_match(multi_space, isl_dim_in,
-			    el_space, isl_dim_in))
-		isl_die(FN(MULTI(BASE),get_ctx)(multi), isl_error_invalid,
-			"domains don't match", goto error);
+	if (FN(EL,check_match_domain_space)(el, multi_space) < 0)
+		goto error;
 
 	if (pos < 0 || pos >= multi->n)
 		isl_die(FN(MULTI(BASE),get_ctx)(multi), isl_error_invalid,
@@ -401,6 +397,7 @@ error:
 	return NULL;
 }
 
+#ifndef NO_GIST
 static __isl_give MULTI(BASE) *FN(MULTI(BASE),align_params_multi_set_and)(
 	__isl_take MULTI(BASE) *multi, __isl_take isl_set *set,
 	__isl_give MULTI(BASE) *(*fn)(__isl_take MULTI(BASE) *multi,
@@ -432,6 +429,7 @@ __isl_give MULTI(BASE) *FN(MULTI(BASE),gist_aligned)(
 {
 	int i;
 
+	multi = FN(MULTI(BASE),cow)(multi);
 	if (!multi || !context)
 		goto error;
 
@@ -464,6 +462,7 @@ __isl_give MULTI(BASE) *FN(MULTI(BASE),gist_params)(
 	dom_context = isl_set_intersect_params(dom_context, context);
 	return FN(MULTI(BASE),gist)(multi, dom_context);
 }
+#endif
 
 __isl_give MULTI(BASE) *FN(FN(MULTI(BASE),from),LIST(BASE))(
 	__isl_take isl_space *space, __isl_take LIST(EL) *list)
@@ -497,6 +496,7 @@ error:
 	return NULL;
 }
 
+#ifndef NO_IDENTITY
 /* Create a multi expression in the given space that maps each
  * input dimension to the corresponding output dimension.
  */
@@ -543,6 +543,7 @@ error:
 	isl_space_free(space);
 	return NULL;
 }
+#endif
 
 /* Construct a multi expression in the given space with value zero in
  * each of the output dimensions.
@@ -579,6 +580,7 @@ __isl_give MULTI(BASE) *FN(MULTI(BASE),zero)(__isl_take isl_space *space)
 	return multi;
 }
 
+#ifndef NO_FROM_BASE
 __isl_give MULTI(BASE) *FN(FN(MULTI(BASE),from),BASE)(__isl_take EL *el)
 {
 	MULTI(BASE) *multi;
@@ -588,6 +590,7 @@ __isl_give MULTI(BASE) *FN(FN(MULTI(BASE),from),BASE)(__isl_take EL *el)
 
 	return multi;
 }
+#endif
 
 __isl_give MULTI(BASE) *FN(MULTI(BASE),drop_dims)(
 	__isl_take MULTI(BASE) *multi,
@@ -793,4 +796,116 @@ error:
 	FN(MULTI(BASE),free)(multi1);
 	FN(MULTI(BASE),free)(multi2);
 	return NULL;
+}
+
+/* This function is currently only used from isl_aff.c
+ */
+static __isl_give MULTI(BASE) *FN(MULTI(BASE),bin_op)(
+	__isl_take MULTI(BASE) *multi1, __isl_take MULTI(BASE) *multi2,
+	__isl_give EL *(*fn)(__isl_take EL *, __isl_take EL *))
+	__attribute__ ((unused));
+
+/* Pairwise perform "fn" to the elements of "multi1" and "multi2" and
+ * return the result.
+ */
+static __isl_give MULTI(BASE) *FN(MULTI(BASE),bin_op)(
+	__isl_take MULTI(BASE) *multi1, __isl_take MULTI(BASE) *multi2,
+	__isl_give EL *(*fn)(__isl_take EL *, __isl_take EL *))
+{
+	int i;
+	isl_ctx *ctx;
+
+	multi1 = FN(MULTI(BASE),cow)(multi1);
+	if (!multi1 || !multi2)
+		goto error;
+
+	ctx = FN(MULTI(BASE),get_ctx)(multi1);
+	if (!isl_space_is_equal(multi1->space, multi2->space))
+		isl_die(ctx, isl_error_invalid,
+			"spaces don't match", goto error);
+
+	for (i = 0; i < multi1->n; ++i) {
+		multi1->p[i] = fn(multi1->p[i], FN(EL,copy)(multi2->p[i]));
+		if (!multi1->p[i])
+			goto error;
+	}
+
+	FN(MULTI(BASE),free)(multi2);
+	return multi1;
+error:
+	FN(MULTI(BASE),free)(multi1);
+	FN(MULTI(BASE),free)(multi2);
+	return NULL;
+}
+
+/* Multiply the elements of "multi" by "v" and return the result.
+ */
+__isl_give MULTI(BASE) *FN(MULTI(BASE),scale_val)(__isl_take MULTI(BASE) *multi,
+	__isl_take isl_val *v)
+{
+	int i;
+
+	if (!multi || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return multi;
+	}
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"expecting rational factor", goto error);
+
+	multi = FN(MULTI(BASE),cow)(multi);
+	if (!multi)
+		return NULL;
+
+	for (i = 0; i < multi->n; ++i) {
+		multi->p[i] = FN(EL,scale_val)(multi->p[i], isl_val_copy(v));
+		if (!multi->p[i])
+			goto error;
+	}
+
+	isl_val_free(v);
+	return multi;
+error:
+	isl_val_free(v);
+	return FN(MULTI(BASE),free)(multi);
+}
+
+/* Multiply the elements of "multi" by the corresponding element of "mv"
+ * and return the result.
+ */
+__isl_give MULTI(BASE) *FN(MULTI(BASE),scale_multi_val)(
+	__isl_take MULTI(BASE) *multi, __isl_take isl_multi_val *mv)
+{
+	int i;
+
+	if (!multi || !mv)
+		goto error;
+
+	if (!isl_space_tuple_match(multi->space, isl_dim_out,
+					mv->space, isl_dim_set))
+		isl_die(isl_multi_val_get_ctx(mv), isl_error_invalid,
+			"spaces don't match", goto error);
+
+	multi = FN(MULTI(BASE),cow)(multi);
+	if (!multi)
+		return NULL;
+
+	for (i = 0; i < multi->n; ++i) {
+		isl_val *v;
+
+		v = isl_multi_val_get_val(mv, i);
+		multi->p[i] = FN(EL,scale_val)(multi->p[i], v);
+		if (!multi->p[i])
+			goto error;
+	}
+
+	isl_multi_val_free(mv);
+	return multi;
+error:
+	isl_multi_val_free(mv);
+	return FN(MULTI(BASE),free)(multi);
 }

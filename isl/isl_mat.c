@@ -8,11 +8,12 @@
  */
 
 #include <isl_ctx_private.h>
+#include <isl_map_private.h>
 #include <isl/space.h>
 #include <isl/seq.h>
 #include <isl_mat_private.h>
-#include "isl_map_private.h"
 #include <isl_space_private.h>
+#include <isl_val_private.h>
 
 isl_ctx *isl_mat_get_ctx(__isl_keep isl_mat *mat)
 {
@@ -34,7 +35,7 @@ struct isl_mat *isl_mat_alloc(struct isl_ctx *ctx,
 	if (isl_blk_is_error(mat->block))
 		goto error;
 	mat->row = isl_alloc_array(ctx, isl_int *, n_row);
-	if (!mat->row)
+	if (n_row && !mat->row)
 		goto error;
 
 	for (i = 0; i < n_row; ++i)
@@ -94,7 +95,7 @@ struct isl_mat *isl_mat_extend(struct isl_mat *mat,
 	if (isl_blk_is_error(mat->block))
 		goto error;
 	row = isl_realloc_array(mat->ctx, mat->row, isl_int *, n_row);
-	if (!row)
+	if (n_row && !row)
 		goto error;
 	mat->row = row;
 
@@ -122,7 +123,7 @@ __isl_give isl_mat *isl_mat_sub_alloc6(isl_ctx *ctx, isl_int **row,
 	if (!mat)
 		return NULL;
 	mat->row = isl_alloc_array(ctx, isl_int *, n_row);
-	if (!mat->row)
+	if (n_row && !mat->row)
 		goto error;
 	for (i = 0; i < n_row; ++i)
 		mat->row[i] = row[first_row+i] + first_col;
@@ -204,19 +205,21 @@ struct isl_mat *isl_mat_cow(struct isl_mat *mat)
 	return mat2;
 }
 
-void isl_mat_free(struct isl_mat *mat)
+void *isl_mat_free(struct isl_mat *mat)
 {
 	if (!mat)
-		return;
+		return NULL;
 
 	if (--mat->ref > 0)
-		return;
+		return NULL;
 
 	if (!ISL_F_ISSET(mat, ISL_MAT_BORROWED))
 		isl_blk_free(mat->ctx, mat->block);
 	isl_ctx_deref(mat->ctx);
 	free(mat->row);
 	free(mat);
+
+	return NULL;
 }
 
 int isl_mat_rows(__isl_keep isl_mat *mat)
@@ -241,6 +244,25 @@ int isl_mat_get_element(__isl_keep isl_mat *mat, int row, int col, isl_int *v)
 			return -1);
 	isl_int_set(*v, mat->row[row][col]);
 	return 0;
+}
+
+/* Extract the element at row "row", oolumn "col" of "mat".
+ */
+__isl_give isl_val *isl_mat_get_element_val(__isl_keep isl_mat *mat,
+	int row, int col)
+{
+	isl_ctx *ctx;
+
+	if (!mat)
+		return NULL;
+	ctx = isl_mat_get_ctx(mat);
+	if (row < 0 || row >= mat->n_row)
+		isl_die(ctx, isl_error_invalid, "row out of range",
+			return NULL);
+	if (col < 0 || col >= mat->n_col)
+		isl_die(ctx, isl_error_invalid, "column out of range",
+			return NULL);
+	return isl_val_int_from_isl_int(ctx, mat->row[row][col]);
 }
 
 __isl_give isl_mat *isl_mat_set_element(__isl_take isl_mat *mat,
@@ -279,6 +301,24 @@ __isl_give isl_mat *isl_mat_set_element_si(__isl_take isl_mat *mat,
 error:
 	isl_mat_free(mat);
 	return NULL;
+}
+
+/* Replace the element at row "row", column "col" of "mat" by "v".
+ */
+__isl_give isl_mat *isl_mat_set_element_val(__isl_take isl_mat *mat,
+	int row, int col, __isl_take isl_val *v)
+{
+	if (!v)
+		return isl_mat_free(mat);
+	if (!isl_val_is_int(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"expecting integer value", goto error);
+	mat = isl_mat_set_element(mat, row, col, v->n);
+	isl_val_free(v);
+	return mat;
+error:
+	isl_val_free(v);
+	return isl_mat_free(mat);
 }
 
 __isl_give isl_mat *isl_mat_diag(isl_ctx *ctx, unsigned n_row, isl_int d)
@@ -967,7 +1007,8 @@ struct isl_mat *isl_mat_swap_rows(struct isl_mat *mat, unsigned i, unsigned j)
 	return mat;
 }
 
-struct isl_mat *isl_mat_product(struct isl_mat *left, struct isl_mat *right)
+__isl_give isl_mat *isl_mat_product(__isl_take isl_mat *left,
+	__isl_take isl_mat *right)
 {
 	int i, j, k;
 	struct isl_mat *prod;
@@ -1244,6 +1285,9 @@ void isl_mat_dump(__isl_keep isl_mat *mat)
 struct isl_mat *isl_mat_drop_cols(struct isl_mat *mat, unsigned col, unsigned n)
 {
 	int r;
+
+	if (n == 0)
+		return mat;
 
 	mat = isl_mat_cow(mat);
 	if (!mat)

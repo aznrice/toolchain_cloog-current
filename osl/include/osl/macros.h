@@ -66,8 +66,7 @@
 
 # define OSL_DEBUG                 0       // 1 for debug mode, 0 otherwise.
 
-# define OSL_TAG_START_SCOP        "<OpenScop>"
-# define OSL_TAG_END_SCOP          "</OpenScop>"
+# define OSL_URI_SCOP              "OpenScop"
 
 # define OSL_PRECISION_ENV         "OSL_PRECISION"
 # define OSL_PRECISION_ENV_SP      "32"
@@ -90,6 +89,7 @@
 # define OSL_BACKEND_FORTRAN       1
 # define OSL_UNDEFINED             -1
 # define OSL_MAX_STRING            2048
+# define OSL_MIN_STRING		   100
 # define OSL_MAX_ARRAYS            128
 
 # define OSL_TYPE_GENERIC          0
@@ -103,6 +103,11 @@
 # define OSL_TYPE_MAY_WRITE        8
 
 # define OSL_FAKE_ARRAY            "fakearray"
+
+# define OSL_SYMBOL_TYPE_ITERATOR	1
+# define OSL_SYMBOL_TYPE_PARAMETER	2
+# define OSL_SYMBOL_TYPE_ARRAY		3
+# define OSL_SYMBOL_TYPE_FUNCTION	4
 
 # define OSL_STRING_UNDEFINED      "UNDEFINED"
 # define OSL_STRING_CONTEXT        "CONTEXT"
@@ -125,22 +130,22 @@
 # define OSL_debug(msg)                                                    \
          do {                                                              \
            if (OSL_DEBUG)                                                  \
-             fprintf(stderr,"[osl] Debug: "msg" (%s).\n", __func__);       \
+             fprintf(stderr,"[osl] Debug: " msg " (%s).\n", __func__);     \
          } while (0)
 
 # define OSL_info(msg)                                                     \
          do {                                                              \
-           fprintf(stderr,"[osl] Info: "msg" (%s).\n", __func__);          \
+           fprintf(stderr,"[osl] Info: " msg " (%s).\n", __func__);        \
          } while (0)
 
 # define OSL_warning(msg)                                                  \
          do {                                                              \
-           fprintf(stderr,"[osl] Warning: "msg" (%s).\n", __func__);       \
+           fprintf(stderr,"[osl] Warning: " msg " (%s).\n", __func__);     \
          } while (0)
 
 # define OSL_error(msg)                                                    \
          do {                                                              \
-           fprintf(stderr,"[osl] Error: "msg" (%s).\n", __func__);         \
+           fprintf(stderr,"[osl] Error: " msg " (%s).\n", __func__);       \
            exit(1);                                                        \
          } while (0)
 

@@ -89,7 +89,7 @@ static __isl_give isl_vertices *vertices_from_list(__isl_keep isl_basic_set *bse
 	vertices->ref = 1;
 	vertices->bset = isl_basic_set_copy(bset);
 	vertices->v = isl_alloc_array(bset->ctx, struct isl_vertex, n_vertices);
-	if (!vertices->v)
+	if (n_vertices && !vertices->v)
 		goto error;
 	vertices->n_vertices = n_vertices;
 
@@ -134,7 +134,7 @@ static int add_vertex(struct isl_vertex_list **list,
 		goto error;
 	isl_assert(bset->ctx, v->v.vertex->n_eq >= nvar, goto error);
 	v->v.dom = isl_basic_set_copy(v->v.vertex);
-	v->v.dom = isl_basic_set_project_out(v->v.dom, isl_dim_set, 0, nvar);
+	v->v.dom = isl_basic_set_params(v->v.dom);
 	if (!v->v.dom)
 		goto error;
 
@@ -438,7 +438,7 @@ __isl_give isl_vertices *isl_basic_set_compute_vertices(
 	selection = isl_alloc_array(bset->ctx, int, bset->n_ineq);
 	snap = isl_alloc_array(bset->ctx, struct isl_tab_undo *, bset->n_ineq);
 	facets = isl_mat_alloc(bset->ctx, nvar, nvar);
-	if (!selection || !snap || !facets)
+	if ((bset->n_ineq && (!selection || !snap)) || !facets)
 		goto error;
 
 	level = 0;
@@ -627,7 +627,7 @@ static int add_chamber(struct isl_chamber_list **list,
 	if (!c)
 		goto error;
 	c->c.vertices = isl_alloc_array(tab->mat->ctx, int, n_vertices);
-	if (!c->c.vertices)
+	if (n_vertices && !c->c.vertices)
 		goto error;
 	c->c.dom = isl_basic_set_from_basic_map(isl_basic_map_copy(tab->bmap));
 	c->c.dom = isl_basic_set_set_rational(c->c.dom);
@@ -873,12 +873,14 @@ static __isl_give isl_vertices *compute_chambers(__isl_take isl_basic_set *bset,
 
 	ctx = isl_vertices_get_ctx(vertices);
 	selection = isl_alloc_array(ctx, int, vertices->n_vertices);
-	if (!selection)
+	if (vertices->n_vertices && !selection)
 		goto error;
 
 	bset = isl_basic_set_params(bset);
 
 	tab = isl_tab_from_basic_set(bset, 1);
+	if (!tab)
+		goto error;
 	for (i = 0; i < bset->n_ineq; ++i)
 		if (isl_tab_freeze_constraint(tab, i) < 0)
 			goto error;
@@ -992,10 +994,8 @@ __isl_give isl_basic_set *isl_vertex_get_domain(__isl_keep isl_vertex *vertex)
 
 	v = &vertex->vertices->v[vertex->id];
 	if (!v->dom) {
-		unsigned nvar;
-		nvar = isl_basic_set_dim(v->vertex, isl_dim_set);
 		v->dom = isl_basic_set_copy(v->vertex);
-		v->dom = isl_basic_set_project_out(v->dom, isl_dim_set, 0, nvar);
+		v->dom = isl_basic_set_params(v->dom);
 	}
 
 	return isl_basic_set_copy(v->dom);
@@ -1086,7 +1086,7 @@ static __isl_give isl_cell *isl_cell_alloc(__isl_take isl_vertices *vertices,
 
 	cell->n_vertices = vertices->c[id].n_vertices;
 	cell->ids = isl_alloc_array(dom->ctx, int, cell->n_vertices);
-	if (!cell->ids)
+	if (cell->n_vertices && !cell->ids)
 		goto error;
 	for (i = 0; i < cell->n_vertices; ++i)
 		cell->ids[i] = vertices->c[id].vertices[i];

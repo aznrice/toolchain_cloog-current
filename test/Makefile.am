@@ -43,7 +43,7 @@ else
 GENERATE_TEST = generate_test
 endif
 noinst_PROGRAMS = $(GENERATE_TEST)
-INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
+AM_CPPFLAGS = -I$(top_builddir)/include -I$(top_srcdir)/include
 LDADD = ../libcloog-isl.la
 generate_test_SOURCES = generate_test.c
 

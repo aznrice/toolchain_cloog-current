@@ -20,8 +20,8 @@
 
 @set EDITION 1.0
 @set SPEC_VERSION 1.0
-@set LIB_VERSION 0.8.3
-@set UPDATED February 17th 2012
+@set LIB_VERSION 0.8.4
+@set UPDATED February 2nd 2013
 @setchapternewpage odd
 
 @c % This is to ask for A4 instead of Letter size document.
@@ -1947,6 +1947,7 @@ A[i+j] += B[i] * C[j];
 @section OpenScop Data Structure Specification
 
 @menu
+* osl_int_t::
 * osl_relation_t::
 * osl_relation_list_t::
 * osl_interface_t::
@@ -1979,6 +1980,31 @@ Before reading at the OpenScop data structures, it is much recommended to
 read at the OpenScop file format description, as it is quite close to this
 representation (@pxref{OpenScop File Format Specification}).
 
+@c ---------------------------------------------------------------------------
+
+@node osl_int_t
+@subsection osl_int_t
+
+@example
+@group
+union osl_int @{
+  long int  sp;               /* Single precision int */
+  long long dp;               /* Double precision int */
+  void*     mp;               /* Pointer to a multiple precision int */
+@};
+typedef union osl_int  osl_int_t;
+typedef union osl_int* osl_int_p;
+@end group
+@end example
+
+@noindent The @code{osl_int_t} union stores an integer element. The
+union is used to implement the multiple precision support of OpenScop.
+A given implementation may or may not support a given precision type.
+However, dedicated functions or macros must tell the user whether a given
+precision type is supported or not. The @code{mp} field is a pointer to
+a multiple precision int, e.g., a @code{mpz_t} from the GNU GMP library.
+
+@c ---------------------------------------------------------------------------
 
 @node osl_relation_t
 @subsection osl_relation_t
@@ -1994,11 +2020,12 @@ struct osl_relation @{
   int nb_input_dims;          /* Number of input dimensions */
   int nb_local_dims;          /* Number of local dimensions */
   int nb_parameters;          /* Number of parameters */
-  void ** m;                  /* Matrix of constraints */
-  struct osl_relation * next; /* Next relation in the union */
+  osl_int_t** m;              /* Matrix of constraints */
+  void* usr;                  /* User-managed field */
+  struct osl_relation*  next; /* Next relation in the union */
 @};
-typedef struct osl_relation   osl_relation_t;
-typedef struct osl_relation * osl_relation_p;
+typedef struct osl_relation  osl_relation_t;
+typedef struct osl_relation* osl_relation_p;
 @end group
 @end example
 
@@ -2028,6 +2055,7 @@ values:
 @item 0: multiple precision, elements are GNU GMP Library's
       @code{mpz_t} (@code{OSL_PRECISION_MP}).
 @end itemize
+Finally, the @code{usr} field is provided for user's convenience.
 
 @c ---------------------------------------------------------------------------
 
@@ -2037,11 +2065,11 @@ values:
 @example
 @group
 struct osl_relation_list @{
-  osl_relation_p elt;              /* Element of the list */
-  struct osl_relation_list * next; /* Next element of the list */
+  osl_relation_p elt;             /* Element of the list */
+  struct osl_relation_list* next; /* Next element of the list */
 @};
-typedef struct osl_relation_list   osl_relation_list_t;
-typedef struct osl_relation_list * osl_relation_list_p;
+typedef struct osl_relation_list  osl_relation_list_t;
+typedef struct osl_relation_list* osl_relation_list_p;
 @end group
 @end example
 
@@ -2057,27 +2085,27 @@ the next element of the list.
 
 @example
 @group
-typedef void   (*osl_idump_f) (FILE *, void *, int);
-typedef char * (*osl_sprint_f)(void *);
-typedef void * (*osl_sread_f) (char *);
-typedef void * (*osl_malloc_f)();
-typedef void   (*osl_free_f)  (void *);
-typedef void * (*osl_clone_f) (void *);
-typedef int    (*osl_equal_f) (void *, void *);
+typedef void  (*osl_idump_f) (FILE*, void*, int);
+typedef char* (*osl_sprint_f)(void*);
+typedef void* (*osl_sread_f) (char*);
+typedef void* (*osl_malloc_f)();
+typedef void  (*osl_free_f)  (void*);
+typedef void* (*osl_clone_f) (void*);
+typedef int   (*osl_equal_f) (void*, void*);
 
 struct osl_interface @{
-  char * URI;                  /* Unique interface identifier string */
-  osl_idump_f  idump;          /* Pointer to the idump function */
-  osl_sprint_f sprint;         /* Pointer to the sprint function */
-  osl_sread_f  sread;          /* Pointer to the sread function */
-  osl_malloc_f malloc;         /* Pointer to the malloc function */
-  osl_free_f   free;           /* Pointer to the free function */
-  osl_clone_f  clone;          /* Pointer to the clone function */
-  osl_equal_f  equal;          /* Pointer to the equal function */
-  struct osl_interface * next; /* Next interface in the list */
+  char* URI;                  /* Unique interface identifier string */
+  osl_idump_f  idump;         /* Pointer to the idump function */
+  osl_sprint_f sprint;        /* Pointer to the sprint function */
+  osl_sread_f  sread;         /* Pointer to the sread function */
+  osl_malloc_f malloc;        /* Pointer to the malloc function */
+  osl_free_f   free;          /* Pointer to the free function */
+  osl_clone_f  clone;         /* Pointer to the clone function */
+  osl_equal_f  equal;         /* Pointer to the equal function */
+  struct osl_interface* next; /* Next interface in the list */
 @};
-typedef struct osl_interface   osl_interface_t;
-typedef struct osl_interface * osl_interface_p;
+typedef struct osl_interface  osl_interface_t;
+typedef struct osl_interface* osl_interface_p;
 @end group
 @end example
 
@@ -2098,12 +2126,12 @@ and the section dedicated to writing extensions
 @example
 @group
 struct osl_generic @{
-  void * data;                 /* Pointer to some data */
-  osl_interface_p interface;   /* Interface to work with the data */
-  struct osl_generic * next;   /* Pointer to the next generic */
+  void* data;                 /* Pointer to some data */
+  osl_interface_p interface;  /* Interface to work with the data */
+  struct osl_generic* next;   /* Pointer to the next generic */
 @};
-typedef struct osl_generic   osl_generic_t;
-typedef struct osl_generic * osl_generic_p;
+typedef struct osl_generic  osl_generic_t;
+typedef struct osl_generic* osl_generic_p;
 @end group
 @end example
 
@@ -2123,10 +2151,10 @@ extensions.
 @example
 @group
 struct osl_string @{
-  char ** string;              /* NULL-terminated array of strings */
+  char** string;              /* NULL-terminated array of strings */
 @};
-typedef struct osl_strings   osl_strings_t;
-typedef struct osl_strings * osl_strings_p;
+typedef struct osl_strings  osl_strings_t;
+typedef struct osl_strings* osl_strings_p;
 @end group
 @end example
 
@@ -2142,11 +2170,11 @@ its manipulation through a generic type.
 @example
 @group
 struct osl_body @{
-  osl_strings_p iterators;     /* Original iterators */
-  osl_strings_p expression;    /* Original statement expression */
+  osl_strings_p iterators;    /* Original iterators */
+  osl_strings_p expression;   /* Original statement expression */
 @};
-typedef struct osl_body   osl_body_t;
-typedef struct osl_body * osl_body_p;
+typedef struct osl_body  osl_body_t;
+typedef struct osl_body* osl_body_p;
 @end group
 @end example
 
@@ -2164,15 +2192,15 @@ substitutions inside the expression.
 @example
 @group
 struct osl_statement @{
-  osl_relation_p domain;       /* Iteration domain */
-  osl_relation_p scattering;   /* Scattering relation */
-  osl_relation_list_p access;  /* List of array access relations */
-  osl_generic_p body;          /* Original statement body */
-  void * usr;                  /* A user-defined field */
-  struct osl_statement * next; /* Next statement in the list */
+  osl_relation_p domain;      /* Iteration domain */
+  osl_relation_p scattering;  /* Scattering relation */
+  osl_relation_list_p access; /* List of array access relations */
+  osl_generic_p body;         /* Original statement body */
+  void* usr;                  /* A user-defined field */
+  struct osl_statement* next; /* Next statement in the list */
 @};
-typedef struct osl_statement   osl_statement_t;
-typedef struct osl_statement * osl_statement_p;
+typedef struct osl_statement  osl_statement_t;
+typedef struct osl_statement* osl_statement_p;
 @end group
 @end example
 
@@ -2197,18 +2225,18 @@ totally managed by the user.
 @example
 @group
 struct osl_scop @{
-  int version;                 /* Version of the data structure */
-  char * language;             /* Target language */
-  osl_relation_p context;      /* Constraints on the parameters */
-  osl_generic_p parameters;    /* Information about parameters */
-  osl_statement_p statement;   /* Statement list */
-  osl_interface_p registry;    /* Registered extension interfaces */
-  osl_generic_p extension;     /* Extension list */
-  void * usr;                  /* A user-defined field */
-  struct osl_scop * next;      /* Next scop in the list */
+  int version;                /* Version of the data structure */
+  char* language;             /* Target language */
+  osl_relation_p context;     /* Constraints on the parameters */
+  osl_generic_p parameters;   /* Information about parameters */
+  osl_statement_p statement;  /* Statement list */
+  osl_interface_p registry;   /* Registered extension interfaces */
+  osl_generic_p extension;    /* Extension list */
+  void* usr;                  /* A user-defined field */
+  struct osl_scop* next;      /* Next scop in the list */
 @};
-typedef struct osl_scop   osl_scop_t;
-typedef struct osl_scop * osl_scop_p;
+typedef struct osl_scop  osl_scop_t;
+typedef struct osl_scop* osl_scop_p;
 @end group
 @end example
 
@@ -2417,6 +2445,9 @@ particular, the sender fully accepts the license and copyright notice.
 * Arrays Extension::
 * Scatnames Extension::
 * Coordinates Extension::
+* Clay Extension::
+* Extbody Extension::
+* Loop Extension::
 * Irregular Extension::
 @end menu
 
@@ -2456,10 +2487,10 @@ This is a comment string.
 @example
 @group
 struct osl_comment @{
-  char * comment;  /* Comment message as a 0-terminated string */
+  char* comment;  /* Comment message as a 0-terminated string */
 @};
-typedef struct osl_comment   osl_comment_t;
-typedef struct osl_comment * osl_comment_p;
+typedef struct osl_comment  osl_comment_t;
+typedef struct osl_comment* osl_comment_p;
 @end group
 @end example
 
@@ -2508,8 +2539,8 @@ beta_0 i beta_1 j beta_2
 struct osl_scatnames @{
   osl_strings_p names;  /* List of textual scattering dimension names. */
 @};
-typedef struct osl_scatnames   osl_scatnames_t;
-typedef struct osl_scatnames * osl_scatnames_p;
+typedef struct osl_scatnames  osl_scatnames_t;
+typedef struct osl_scatnames* osl_scatnames_p;
 @end group
 @end example
 
@@ -2569,12 +2600,12 @@ extension. It corresponds to the array names of the preliminary example
 @example
 @group
 struct osl_arrays @{
-  int nb_names;      /* Number of names */
-  int  *  id;        /* Array of nb_names identifiers */
-  char ** names;     /* Array of nb_names names */
+  int nb_names;     /* Number of names */
+  int *  id;        /* Array of nb_names identifiers */
+  char** names;     /* Array of nb_names names */
 @};
-typedef struct osl_arrays   osl_arrays_t;
-typedef struct osl_arrays * osl_arrays_p;
+typedef struct osl_arrays  osl_arrays_t;
+typedef struct osl_arrays* osl_arrays_p;
 @end group
 @end example
 
@@ -2603,16 +2634,19 @@ the indentation level.
 grammar:
 @example
 Coordinates_generic ::= "<coordinates>" Coordinates "</coordinates>"
-Coordinates         ::= File_name Start_line End_line Indentation
+Coordinates         ::= File_name Start_line Start_column
+                        End_line End_column Indentation
 File_name           ::= _String
 Start_line          ::= _Integer
+Start_column        ::= _Integer
 End_line            ::= _Integer
+End_column          ::= _Integer
 Indentation         ::= _Integer
 @end example
 
 @noindent The original file name where the SCoP has been extracted is
-provided on the first line, then the starting line number of the SCoP,
-then the ending line number of the SCoP, and lastly the indentation level
+provided on the first line, then the starting line and column numbers of the SCoP,
+then the ending line and column numbers of the SCoP, and lastly the indentation level
 (the number of spaces characters each line of the SCoP starts with).
 For instance, the following example is a correct textual
 @code{coordinates} extension:
@@ -2622,10 +2656,10 @@ For instance, the following example is a correct textual
 <coordinates>
 # File name
 ./test/ax-do.c
-# Starting line
-9
-# Ending line
-15
+# Starting line and column
+9 3
+# Ending line and column
+15 4
 # Indentation
 2
 </coordinates>
@@ -2639,18 +2673,246 @@ For instance, the following example is a correct textual
 @example
 @group
 struct osl_coordinates @{
-  char * name;   /* File name */
-  int    start;  /* First line of the SCoP in the source file */
-  int    end;    /* Last line of the SCoP in the source file */
-  int    indent; /* Indentation */
+  char* name;   /* File name */
+  int   start;  /* First line of the SCoP in the source file */
+  int   end;    /* Last line of the SCoP in the source file */
+  int   indent; /* Indentation */
 @};
-typedef struct osl_coordinates   osl_coordinates_t;
-typedef struct osl_coordinates * osl_coordinates_p;
+typedef struct osl_coordinates  osl_coordinates_t;
+typedef struct osl_coordinates* osl_coordinates_p;
 @end group
 @end example
 
 
 @c ---------------------------------------------------------------------------
+
+
+@node Clay Extension
+@subsection Clay Extension
+
+@noindent @strong{Description}
+@itemize @bullet
+@item URI: @code{clay}.
+@item Author: C@'edric Bastoul <cedric.bastoul@@u-psud.fr>.
+@item Purpose: the @code{clay} extension stores a Clay script.
+@end itemize
+
+@noindent @strong{File Format}
+
+@noindent The @code{clay} extension file format respects the following
+grammar:
+@example
+Clay_generic        ::= "<clay>" Clay "</clay>"
+Clay                ::= _Text
+@end example
+
+@noindent An example of a @code{clay} extension is the following:
+@example
+@group
+<clay>
+fission([2,1], 1);
+stripmine([2], 32, 1);
+unroll([3], 4);
+</clay>
+@end group
+@end example
+
+@noindent @strong{Data Structure}
+
+@noindent The @code{clay} extension data structure is the following:
+@example
+@group
+struct osl_clay @{
+  char* script;  /* Clay script as a 0-terminated string */
+@};
+typedef struct osl_clay  osl_clay_t;
+typedef struct osl_clay* osl_clay_p;
+@end group
+@end example
+
+@c ---------------------------------------------------------------------------
+
+
+@node Extbody Extension
+@subsection Extbody Extension
+
+@noindent @strong{Description}
+@itemize @bullet
+@item URI: @code{extbody}.
+@item Author: Joel Poudroux <joel.poudroux@@u-psud.fr>.
+@item Purpose: the @code{extbody} extension provides a list of
+coordinates to locate each access easily in the body string.
+@end itemize
+
+@noindent @strong{File Format}
+
+@noindent The @code{extbody} extension file format respects the following
+grammar.  It reuses the @code{Body} description (@pxref{Body Generic})
+
+@example
+Extbody_generic   ::= "<extbody>" Extbody "</extbody>"
+Extbody           ::= Coordinate_number Coordinate_list Body
+Coordinate_list   ::= Access_start Access_length Coordinate_list | (void)
+Coordinate_number ::= _Integer
+Access_start      ::= _Integer
+Access_length     ::= _Integer
+@end example
+
+@noindent This extension can replace the @pxref{Body Generic}.  The number of
+accesses @code{Coordinate_number} must be equal to the number of access relations
+in the statement. Each coordinate is associated with the corresponding access
+relation in the access relation list (the order matters). It is possible that an access has
+two relations in the
+access relation list (when it is in read/write mode). In this case we can replace one
+of the couple of coordinates with a (-1 -1). It is possible to put twice the
+same coordinates, but using (-1 -1) may improve some tool efficiency (e.g., Clay would
+apply twice the same processing otherwise). For each access,
+@code{Access_start} is the index of this acces in the body string (starting from 0),
+and @code{Access_length} is the length of the access text. For instance:
+
+@example
+@group
+<extbody>
+# Number of access
+3
+# Mapping start/length
+ 0  1   # a coordinates (read)
+-1 -1   # a coordinates (write)
+ 6  9   # b coordinates
+# Number of original iterators
+0
+# Statement body expression
+a++ + b[i+1][j];
+</extbody>
+@end group
+@end example
+
+@noindent @strong{Data Structure}
+
+@noindent The @code{extbody} extension data structure is the following:
+
+@example
+@group
+struct osl_extbody @{
+  osl_body_p body;
+  int nb_access;   /**< Nb of access. */
+  int * start;     /**< Array of nb_access start. */
+  int * length;    /**< Array of nb_access length. */
+@};
+typedef struct osl_extbody  osl_extbody_t;
+typedef struct osl_extbody* osl_extbody_p;
+@end group
+@end example
+
+
+@c ---------------------------------------------------------------------------
+
+
+@node Loop Extension
+@subsection Loop Extension
+
+@noindent @strong{Description}
+@itemize @bullet
+@item URI: @code{loop}.
+@item Author: Taj Muhammad Khan <taj.khan@@inria.fr>.
+@item Purpose: the @code{loop} extension provides a means to transfer 
+information about loops in the original code. It starts with the number of loops
+in the SCoP.
+For each loop it records: the iterator name, the number of statements, the statement
+identifiers, the names of private variables,
+and an identifier for OpenMP pragma directive.
+@end itemize
+
+@noindent @strong{File Format}
+
+@noindent The @code{coordinates} extension file format respects the following
+grammar:
+@example
+Loop_generic            ::= "<loop>" Num_loops Loop_list "</loop>"
+Num_loops               ::= _Integer
+Loop_list               ::= Loop Loop_list | (void) 
+Loop                    ::= Iterator_name Nb_stmts Stmt_list 
+		                        Private_variables Directive
+Iterator_name           ::= _String
+Nb_stmts                ::= _Integer
+Stmt_list               ::= Stmt_id Stmt_list | (void)
+Stmt_id                 ::= _Integer
+Private_variables       ::= _String
+Directive               ::= _Integer
+@end example
+
+
+@noindent With in the tags, the number of loops is provided on the first line.
+Next comes a series of @code{loop} structures. Within each @code{loop},
+the first line contains the name of the iterator, next comes the number of
+statements in the loop followed by their identifiers separated by spaces.
+Next line contains the names of the private variables and in the end is the OpenMP
+pragma directive. In case there are no private variables to be declared for a
+loop, the special string "(null)" should replace their declaration as shown
+below.
+
+For instance, the following example is a correct textual
+@code{loop} extension containing two loops:
+
+@example
+@group
+<loop>
+# Number of loops
+2
+# ===========================================
+# Loop number 1 
+# Iterator name
+t2
+# Number of stmts
+1
+# Statement identifiers
+1
+# Private variables
+lbv,ubv
+# Directive
+1
+# ===========================================
+# Loop number 2 
+# Iterator name
+t2
+# Number of stmts
+1
+# Statement identifiers
+2
+# Private variables
+(null)
+# Directive
+1
+</loop>
+@end group
+@end example
+
+@noindent The pragma directive can have one of the defined values: 
+@code{OSL_LOOP_DIRECTIVE_NONE}, @code{OSL_LOOP_DIRECTIVE_PARALLEL},
+@code{OSL_LOOP_DIRECTIVE_MPI}, or @code{OSL_LOOP_DIRECTIVE_VECTOR}.
+
+@noindent @strong{Data Structure}
+
+@noindent The @code{loop} extension data structure is the following:
+
+@example
+@group
+struct osl_loop @{
+  char * iter;             /* \0 terminated iterator name */
+  int  nb_stmts;           /* Number of statements in the loop */
+  int  *  stmt_ids;        /* Array of statement identifiers. */
+  char * private_vars;     /* \0 terminated variable names */
+  int  directive;          /* the OpenMP directive to implement */
+  struct osl_loop * next;  /* pointer to the next element */
+@};
+typedef struct osl_loop   osl_loop_t;
+typedef struct osl_loop * osl_loop_p;
+@end group
+@end example
+
+
+@c ---------------------------------------------------------------------------
+
 
 @node Irregular Extension
 @subsection Irregular Extension
@@ -2727,6 +2989,18 @@ setenv OSL_PRECISION 64
 his .bashrc or .tcshrc (or whatever convenient file) to make this
 setting permanent. 
 
+The OpenScop Library provides the following function to know whether or not
+a given precision type is supported by the library or not:
+@example
+@group
+int osl_int_is_precision_supported(int precision);
+@end group
+@end example
+@noindent this function returns @code{1} if the precision type is
+supported, @code{0} otherwise. Possible values for the @code{precision}
+parameter are @code{32} for 32 bits (single) precision, @code{64} for
+64 bits (double) precision and @code{0} for multiple precision.
+
 @node Base Functions
 @section Base Functions
 
@@ -2765,8 +3039,8 @@ OpenScop Library.
 
 @example
 @group
-void osl_@emph{structure}_dump(FILE * output, osl_@emph{structure}_p s);
-void osl_@emph{structure}_idump(FILE * output, osl_@emph{structure}_p s, int i);
+void osl_@emph{structure}_dump(FILE* output, osl_@emph{structure}_p s);
+void osl_@emph{structure}_idump(FILE* output, osl_@emph{structure}_p s, int i);
 @end group
 @end example
 
@@ -2786,7 +3060,7 @@ an indentation level.
 
 @example
 @group
-void osl_@emph{structure}_print(FILE * output, osl_@emph{structure}_p s);
+void osl_@emph{structure}_print(FILE* output, osl_@emph{structure}_p s);
 @end group
 @end example
 
@@ -2803,7 +3077,7 @@ for writing).
 
 @example
 @group
-osl_@emph{structure}_p osl_@emph{structure}_read(FILE * input);
+osl_@emph{structure}_p osl_@emph{structure}_read(FILE* input);
 @end group
 @end example
 

@@ -1042,9 +1042,39 @@ static int ok_to_set_div_from_bound(struct isl_basic_map *bmap,
 	return 1;
 }
 
+/* Would an expression for div "div" based on inequality "ineq" of "bmap"
+ * be a better expression than the current one?
+ *
+ * If we do not have any expression yet, then any expression would be better.
+ * Otherwise we check if the last variable involved in the inequality
+ * (disregarding the div that it would define) is in an earlier position
+ * than the last variable involved in the current div expression.
+ */
+static int better_div_constraint(__isl_keep isl_basic_map *bmap,
+	int div, int ineq)
+{
+	unsigned total = 1 + isl_space_dim(bmap->dim, isl_dim_all);
+	int last_div;
+	int last_ineq;
+
+	if (isl_int_is_zero(bmap->div[div][0]))
+		return 1;
+
+	if (isl_seq_last_non_zero(bmap->ineq[ineq] + total + div + 1,
+				  bmap->n_div - (div + 1)) >= 0)
+		return 0;
+
+	last_ineq = isl_seq_last_non_zero(bmap->ineq[ineq], total + div);
+	last_div = isl_seq_last_non_zero(bmap->div[div] + 1,
+					 total + bmap->n_div);
+
+	return last_ineq < last_div;
+}
+
 /* Given two constraints "k" and "l" that are opposite to each other,
  * except for the constant term, check if we can use them
- * to obtain an expression for one of the hitherto unknown divs.
+ * to obtain an expression for one of the hitherto unknown divs or
+ * a "better" expression for a div for which we already have an expression.
  * "sum" is the sum of the constant terms of the constraints.
  * If this sum is strictly smaller than the coefficient of one
  * of the divs, then this pair can be used define the div.
@@ -1060,11 +1090,11 @@ static struct isl_basic_map *check_for_div_constraints(
 	unsigned total = 1 + isl_space_dim(bmap->dim, isl_dim_all);
 
 	for (i = 0; i < bmap->n_div; ++i) {
-		if (!isl_int_is_zero(bmap->div[i][0]))
-			continue;
 		if (isl_int_is_zero(bmap->ineq[k][total + i]))
 			continue;
 		if (isl_int_abs_ge(sum, bmap->ineq[k][total + i]))
+			continue;
+		if (!better_div_constraint(bmap, i, k))
 			continue;
 		if (!ok_to_set_div_from_bound(bmap, i, k))
 			break;
@@ -1241,6 +1271,10 @@ struct isl_basic_map *isl_basic_map_simplify(struct isl_basic_map *bmap)
 		return NULL;
 	while (progress) {
 		progress = 0;
+		if (!bmap)
+			break;
+		if (isl_basic_map_plain_is_empty(bmap))
+			break;
 		bmap = isl_basic_map_normalize_constraints(bmap);
 		bmap = normalize_div_expressions(bmap);
 		bmap = remove_duplicate_divs(bmap, &progress);
@@ -1329,9 +1363,12 @@ static int div_is_redundant(struct isl_basic_map *bmap, int div)
 			return 0;
 	}
 
-	for (i = 0; i < bmap->n_div; ++i)
+	for (i = 0; i < bmap->n_div; ++i) {
+		if (isl_int_is_zero(bmap->div[i][0]))
+			continue;
 		if (!isl_int_is_zero(bmap->div[i][1+pos]))
 			return 0;
+	}
 
 	return 1;
 }
@@ -2110,6 +2147,8 @@ static struct isl_basic_map *normalize_divs_in_context(
 	for (i = 0; i < context->n_eq; ++i) {
 		int k;
 		k = isl_basic_map_alloc_equality(bmap);
+		if (k < 0)
+			return isl_basic_map_free(bmap);
 		isl_seq_cpy(bmap->eq[k], context->eq[i], 1 + total_context);
 		isl_seq_clr(bmap->eq[k] + 1 + total_context,
 				isl_basic_map_total_dim(bmap) - total_context);
@@ -2143,6 +2182,8 @@ struct isl_basic_map *isl_basic_map_gist(struct isl_basic_map *bmap,
 
 	bmap = isl_basic_map_remove_redundancies(bmap);
 	context = isl_basic_map_remove_redundancies(context);
+	if (!context)
+		goto error;
 
 	if (context->n_eq)
 		bmap = normalize_divs_in_context(bmap, context);
@@ -2182,8 +2223,8 @@ __isl_give isl_map *isl_map_gist_basic_map(__isl_take isl_map *map,
 		goto error;;
 	isl_assert(map->ctx, isl_space_is_equal(map->dim, context->dim), goto error);
 	map = isl_map_compute_divs(map);
-	for (i = 0; i < map->n; ++i)
-		context = isl_basic_map_align_divs(context, map->p[i]);
+	if (!map)
+		goto error;
 	for (i = map->n - 1; i >= 0; --i) {
 		map->p[i] = isl_basic_map_gist(map->p[i],
 						isl_basic_map_copy(context));
@@ -2940,6 +2981,8 @@ struct isl_basic_map *isl_basic_map_drop_redundant_divs(
 
 	if (!bmap)
 		goto error;
+	if (bmap->n_div == 0)
+		return bmap;
 
 	off = isl_space_dim(bmap->dim, isl_dim_all);
 	pairs = isl_calloc_array(bmap->ctx, int, bmap->n_div);

@@ -1,3 +1,20 @@
+version: 0.12.1
+date: Wed Jul 24 12:54:46 CEST 2013
+changes:
+	- handle malloc returning NULL on zero-size allocation
+	- fix regression in AST generator
+---
+version: 0.12
+date: Sun Jun 23 20:23:05 CEST 2013
+changes:
+	- add isl_val abstraction
+---
+version: 0.11.2
+date: Tue Apr  9 18:45:10 CEST 2013
+changes:
+	- make code generation output the same on Solaris
+	- fix some hard to trigger bugs
+---
 version: 0.11.1
 date: Mon Dec 10 11:55:30 CET 2012
 changes:
@@ -91,8 +108,4 @@ changes:
 	- fix several hard to trigger bugs
 	- improved argument parsing
 	- support parametric vertex enumeration for barvinok
----
-version: 0.08
-date: Fri Oct 21 12:36:20 CEST 2011
-changes:
 	- optionally use Bernstein expansion to compute bounds

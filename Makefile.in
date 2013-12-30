@@ -162,6 +162,7 @@ PROGRAMS = $(bin_PROGRAMS)
 am_cloog_OBJECTS = cloog.$(OBJEXT)
 cloog_OBJECTS = $(am_cloog_OBJECTS)
 cloog_LDADD = $(LDADD)
+DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/autoconf/depcomp
 am__depfiles_maybe = depfiles
 am__mv = mv -f
@@ -440,10 +441,9 @@ SOURCES_CORE = \
 	source/union_domain.c \
 	source/version.c
 
-DEFAULT_INCLUDES = -I.
-INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
+AM_CPPFLAGS = -I. -I$(top_builddir)/include -I$(top_srcdir)/include
 AM_CFLAGS = $(CFLAGS_WARN)
-libcloog_isl_la_CPPFLAGS = @ISL_CPPFLAGS@ @OSL_CPPFLAGS@
+libcloog_isl_la_CPPFLAGS = -I. -I$(top_builddir)/include -I$(top_srcdir)/include @ISL_CPPFLAGS@ @OSL_CPPFLAGS@
 libcloog_isl_la_LDFLAGS = -version-info @versioninfo@ \
 	-rpath $(libdir) @ISL_LDFLAGS@ @OSL_LDFLAGS@
 
@@ -1373,6 +1373,10 @@ version.h: @GIT_INDEX@
 install-data-local:
 	@test -z "$(pkgconfig_libdir)" || $(mkdir_p) "$(DESTDIR)$(pkgconfig_libdir)"
 	$(INSTALL_DATA) $(pkgconfig_libfile) "$(DESTDIR)$(pkgconfig_libdir)/$(pkgconfig_libfile)"
+	@test -z "$(DESTDIR)$(libdir)/isl" || $(mkdir_p) "$(DESTDIR)$(libdir)/isl"
+	$(INSTALL_DATA) "$(top_srcdir)/cmake/isl-config.cmake" "$(DESTDIR)$(libdir)/isl/"
+	@test -z "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)" || $(mkdir_p) "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)"
+	$(INSTALL_DATA) "$(top_srcdir)/cmake/cloog-isl-config.cmake" "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)/"
 
 uninstall-local:
 	rm -f "$(DESTDIR)$(pkgconfig_libdir)/$(pkgconfig_libfile)"

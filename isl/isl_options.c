@@ -176,6 +176,8 @@ ISL_ARG_CHOICE(struct isl_options, schedule_fuse, 0, "schedule-fuse", fuse,
 	ISL_SCHEDULE_FUSE_MAX, "level of fusion during scheduling")
 ISL_ARG_BOOL(struct isl_options, tile_scale_tile_loops, 0,
 	"tile-scale-tile-loops", 1, "scale tile loops")
+ISL_ARG_BOOL(struct isl_options, tile_shift_point_loops, 0,
+	"tile-shift-point-loops", 1, "shift point loops to start at zero")
 ISL_ARG_STR(struct isl_options, ast_iterator_type, 0,
 	"ast-iterator-type", "type", "int",
 	"type used for iterators during printing of AST")
@@ -198,6 +200,8 @@ ISL_ARG_BOOL(struct isl_options, ast_build_scale_strides, 0,
 	"allow iterators of strided loops to be scaled down")
 ISL_ARG_BOOL(struct isl_options, ast_build_allow_else, 0,
 	"ast-build-allow-else", 1, "generate if statements with else branches")
+ISL_ARG_BOOL(struct isl_options, ast_build_allow_or, 0,
+	"ast-build-allow-or", 1, "generate if conditions with disjunctions")
 ISL_ARG_VERSION(print_version)
 ISL_ARGS_END
 
@@ -269,6 +273,11 @@ ISL_CTX_GET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
 	tile_scale_tile_loops)
 
 ISL_CTX_SET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
+	tile_shift_point_loops)
+ISL_CTX_GET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
+	tile_shift_point_loops)
+
+ISL_CTX_SET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
 	ast_build_atomic_upper_bound)
 ISL_CTX_GET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
 	ast_build_atomic_upper_bound)
@@ -307,3 +316,8 @@ ISL_CTX_SET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
 	ast_build_allow_else)
 ISL_CTX_GET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
 	ast_build_allow_else)
+
+ISL_CTX_SET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
+	ast_build_allow_or)
+ISL_CTX_GET_BOOL_DEF(isl_options, struct isl_options, isl_options_args,
+	ast_build_allow_or)

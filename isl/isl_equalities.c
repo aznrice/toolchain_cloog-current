@@ -1,16 +1,20 @@
 /*
  * Copyright 2008-2009 Katholieke Universiteit Leuven
+ * Copyright 2010      INRIA Saclay
  *
  * Use of this software is governed by the MIT license
  *
  * Written by Sven Verdoolaege, K.U.Leuven, Departement
  * Computerwetenschappen, Celestijnenlaan 200A, B-3001 Leuven, Belgium
+ * and INRIA Saclay - Ile-de-France, Parc Club Orsay Universite,
+ * ZAC des vignes, 4 rue Jacques Monod, 91893 Orsay, France
  */
 
 #include <isl_mat_private.h>
 #include <isl/seq.h>
 #include "isl_map_private.h"
 #include "isl_equalities.h"
+#include <isl_val_private.h>
 
 /* Given a set of modulo constraints
  *
@@ -374,6 +378,59 @@ error:
 
 /* Given a set of equalities
  *
+ *		B(y) + A x = 0						(*)
+ *
+ * compute and return an affine transformation T,
+ *
+ *		y = T y'
+ *
+ * that bijectively maps the integer vectors y' to integer
+ * vectors y that satisfy the modulo constraints for some value of x.
+ *
+ * Let [H 0] be the Hermite Normal Form of A, i.e.,
+ *
+ *		A = [H 0] Q
+ *
+ * Then y is a solution of (*) iff
+ *
+ *		H^-1 B(y) (= - [I 0] Q x)
+ *
+ * is an integer vector.  Let d be the common denominator of H^-1.
+ * We impose
+ *
+ *		d H^-1 B(y) = 0 mod d
+ *
+ * and compute the solution using isl_mat_parameter_compression.
+ */
+__isl_give isl_mat *isl_mat_parameter_compression_ext(__isl_take isl_mat *B,
+	__isl_take isl_mat *A)
+{
+	isl_ctx *ctx;
+	isl_vec *d;
+	int n_row, n_col;
+
+	if (!A)
+		return isl_mat_free(B);
+
+	ctx = isl_mat_get_ctx(A);
+	n_row = A->n_row;
+	n_col = A->n_col;
+	A = isl_mat_left_hermite(A, 0, NULL, NULL);
+	A = isl_mat_drop_cols(A, n_row, n_col - n_row);
+	A = isl_mat_lin_to_aff(A);
+	A = isl_mat_right_inverse(A);
+	d = isl_vec_alloc(ctx, n_row);
+	if (A)
+		d = isl_vec_set(d, A->row[0][0]);
+	A = isl_mat_drop_rows(A, 0, 1);
+	A = isl_mat_drop_cols(A, 0, 1);
+	B = isl_mat_product(A, B);
+
+	return isl_mat_parameter_compression(B, d);
+}
+
+/* Given a set of equalities
+ *
  *		M x - c = 0
  *
  * this function computes a unimodular transformation from a lower-dimensional
@@ -413,8 +470,8 @@ error:
  *
  *		x2' = Q2 x
  */
-struct isl_mat *isl_mat_variable_compression(struct isl_mat *B,
-	struct isl_mat **T2)
+__isl_give isl_mat *isl_mat_variable_compression(__isl_take isl_mat *B,
+	__isl_give isl_mat **T2)
 {
 	int i;
 	struct isl_mat *H = NULL, *C = NULL, *H1, *U = NULL, *U1, *U2, *TC;
@@ -688,5 +745,37 @@ int isl_set_dim_residue_class(struct isl_set *set,
 error:
 	isl_int_clear(m);
 	isl_int_clear(r);
+	return -1;
+}
+
+/* Check if dimension "dim" belongs to a residue class
+ *		i_dim \equiv r mod m
+ * with m != 1 and if so return m in *modulo and r in *residue.
+ * As a special case, when i_dim has a fixed value v, then
+ * *modulo is set to 0 and *residue to v.
+ *
+ * If i_dim does not belong to such a residue class, then *modulo
+ * is set to 1 and *residue is set to 0.
+ */
+int isl_set_dim_residue_class_val(__isl_keep isl_set *set,
+	int pos, __isl_give isl_val **modulo, __isl_give isl_val **residue)
+{
+	*modulo = NULL;
+	*residue = NULL;
+	if (!set)
+		return -1;
+	*modulo = isl_val_alloc(isl_set_get_ctx(set));
+	*residue = isl_val_alloc(isl_set_get_ctx(set));
+	if (!*modulo || !*residue)
+		goto error;
+	if (isl_set_dim_residue_class(set, pos,
+					&(*modulo)->n, &(*residue)->n) < 0)
+		goto error;
+	isl_int_set_si((*modulo)->d, 1);
+	isl_int_set_si((*residue)->d, 1);
+	return 0;
+error:
+	isl_val_free(*modulo);
+	isl_val_free(*residue);
 	return -1;
 }

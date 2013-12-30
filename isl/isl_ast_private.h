@@ -19,7 +19,7 @@ struct isl_ast_expr {
 	enum isl_ast_expr_type type;
 
 	union {
-		isl_int i;
+		isl_val *v;
 		isl_id *id;
 		struct {
 			enum isl_ast_op_type op;
@@ -34,7 +34,6 @@ struct isl_ast_expr {
 
 #include <isl_list_templ.h>
 
-__isl_give isl_ast_expr *isl_ast_expr_alloc_int(isl_ctx *ctx, isl_int i);
 __isl_give isl_ast_expr *isl_ast_expr_alloc_int_si(isl_ctx *ctx, int i);
 __isl_give isl_ast_expr *isl_ast_expr_alloc_op(isl_ctx *ctx,
 	enum isl_ast_op_type op, int n_arg);

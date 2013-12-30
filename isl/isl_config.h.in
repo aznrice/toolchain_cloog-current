@@ -1,7 +1,13 @@
 /* isl_config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* Define if HeaderSearchOptions::AddPath takes 4 arguments */
+#undef ADDPATH_TAKES_4_ARGUMENTS
+
 /* Clang installation prefix */
 #undef CLANG_PREFIX
+
+/* Define if CompilerInstance::createDiagnostics takes argc and argv */
+#undef CREATEDIAGNOSTICS_TAKES_ARG
 
 /* Define if TargetInfo::CreateTargetInfo takes pointer */
 #undef CREATETARGETINFO_TAKES_POINTER
@@ -12,6 +18,9 @@
 /* most gcc compilers know a function __attribute__((__warn_unused_result__))
    */
 #undef GCC_WARN_UNUSED_RESULT
+
+/* result of mpz_gcdext needs to be normalized */
+#undef GMP_NORMALIZE_GCDEXT
 
 /* Define if clang/Basic/DiagnosticOptions.h exists */
 #undef HAVE_BASIC_DIAGNOSTICOPTIONS_H
@@ -31,6 +40,9 @@
 
 /* Define if Driver constructor takes IsProduction argument */
 #undef HAVE_ISPRODUCTION
+
+/* Define to 1 if you have the `gmp' library (-lgmp). */
+#undef HAVE_LIBGMP
 
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H

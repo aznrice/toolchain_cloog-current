@@ -65,6 +65,7 @@
 # define OSL_RELATION_H
 
 # include <stdio.h>
+# include <osl/int.h>
 # include <osl/names.h>
 # include <osl/vector.h>
 
@@ -73,6 +74,7 @@ extern "C"
   {
 # endif
 
+# define OSL_URI_RELATION "relation"
 
 /**
  * The osl_relation_t structure stores a union of relations. It is a
@@ -109,8 +111,9 @@ struct osl_relation {
   int nb_local_dims;          /**< Number of local (existentially
                                    quantified) dimensions */
   int nb_parameters;          /**< Number of parameters */
-  void ** m;                  /**< An array of pointers to the beginning
+  osl_int_t** m;              /**< An array of pointers to the beginning
 			           of each row of the relation matrix */
+  void* usr;                  /**< User-managed field, untouched by osl */
   struct osl_relation * next; /**< Pointer to the next relation in the
                                    union of relations (NULL if none) */
 };
@@ -128,15 +131,24 @@ char *         osl_relation_expression(osl_relation_p relation,
 char *         osl_relation_spprint_polylib(osl_relation_p, osl_names_p);
 char *         osl_relation_spprint(osl_relation_p, osl_names_p);
 void           osl_relation_pprint(FILE *, osl_relation_p, osl_names_p);
+char *         osl_relation_sprint(osl_relation_p);
 void           osl_relation_print(FILE *, osl_relation_p);
 
+// SCoPLib Compatibility
+char *         osl_relation_spprint_polylib_scoplib(osl_relation_p,
+                                                    osl_names_p, int, int);
+char *         osl_relation_spprint_scoplib(osl_relation_p, osl_names_p,
+                                            int, int);
+void           osl_relation_pprint_scoplib(FILE *, osl_relation_p,
+                                           osl_names_p, int, int);
 
 /*****************************************************************************
  *                               Reading function                            *
  *****************************************************************************/
 osl_relation_p osl_relation_pread(FILE *, int);
 osl_relation_p osl_relation_read(FILE *);
-osl_relation_p osl_relation_read_arrays(FILE *, char ***, int *);
+osl_relation_p osl_relation_psread(char **, int);
+osl_relation_p osl_relation_sread(char **);
 
 
 /*+***************************************************************************
@@ -151,7 +163,9 @@ void           osl_relation_free(osl_relation_p);
 /*+***************************************************************************
  *                            Processing functions                           *
  *****************************************************************************/
+int            osl_relation_nb_components(osl_relation_p relation);
 osl_relation_p osl_relation_nclone(osl_relation_p, int);
+osl_relation_p osl_relation_clone_nconstraints(osl_relation_p, int);
 osl_relation_p osl_relation_clone(osl_relation_p);
 void           osl_relation_add(osl_relation_p *, osl_relation_p);
 osl_relation_p osl_relation_union(osl_relation_p, osl_relation_p);
@@ -167,10 +181,12 @@ void           osl_relation_replace_constraints(osl_relation_p,
                                                 osl_relation_p, int);
 void           osl_relation_insert_constraints(osl_relation_p,
                                                osl_relation_p, int);
+void           osl_relation_swap_constraints(osl_relation_p, int, int);
 void           osl_relation_remove_row(osl_relation_p, int);
 void           osl_relation_remove_column(osl_relation_p, int);
 void           osl_relation_insert_columns(osl_relation_p, osl_relation_p,int);
 osl_relation_p osl_relation_concat_constraints(osl_relation_p, osl_relation_p);
+int            osl_relation_part_equal(osl_relation_p, osl_relation_p);    
 int            osl_relation_equal(osl_relation_p, osl_relation_p);    
 int            osl_relation_integrity_check(osl_relation_p, int, int, int,int);
 void           osl_relation_set_attributes_one(osl_relation_p,
@@ -182,7 +198,7 @@ int            osl_relation_is_access(osl_relation_p);
 void           osl_relation_get_attributes(osl_relation_p,
                                            int *, int *, int *, int *, int *);
 osl_relation_p osl_relation_extend_output(osl_relation_p, int);
-
+osl_interface_p osl_relation_interface();
 
 # if defined(__cplusplus)
   }

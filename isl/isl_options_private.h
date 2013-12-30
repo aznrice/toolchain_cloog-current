@@ -58,6 +58,7 @@ struct isl_options {
 	int			schedule_fuse;
 
 	int			tile_scale_tile_loops;
+	int			tile_shift_point_loops;
 
 	char			*ast_iterator_type;
 
@@ -68,6 +69,7 @@ struct isl_options {
 	int			ast_build_separation_bounds;
 	int			ast_build_scale_strides;
 	int			ast_build_allow_else;
+	int			ast_build_allow_or;
 };
 
 #endif

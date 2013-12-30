@@ -35,6 +35,7 @@ enum isl_tab_undo_type {
 	isl_tab_undo_zero,
 	isl_tab_undo_allocate,
 	isl_tab_undo_relax,
+	isl_tab_undo_unrestrict,
 	isl_tab_undo_bmap_ineq,
 	isl_tab_undo_bmap_eq,
 	isl_tab_undo_bmap_div,
@@ -181,6 +182,8 @@ struct isl_tab *isl_tab_alloc(struct isl_ctx *ctx,
 	unsigned n_row, unsigned n_var, unsigned M);
 void isl_tab_free(struct isl_tab *tab);
 
+isl_ctx *isl_tab_get_ctx(struct isl_tab *tab);
+
 __isl_give struct isl_tab *isl_tab_from_basic_map(
 	__isl_keep isl_basic_map *bmap, int track);
 __isl_give struct isl_tab *isl_tab_from_basic_set(
@@ -193,6 +196,8 @@ struct isl_basic_map *isl_basic_map_update_from_tab(struct isl_basic_map *bmap,
 struct isl_basic_set *isl_basic_set_update_from_tab(struct isl_basic_set *bset,
 	struct isl_tab *tab);
 int isl_tab_detect_implicit_equalities(struct isl_tab *tab) WARN_UNUSED;
+__isl_give isl_basic_map *isl_tab_make_equalities_explicit(struct isl_tab *tab,
+	__isl_take isl_basic_map *bmap);
 int isl_tab_detect_redundant(struct isl_tab *tab) WARN_UNUSED;
 #define ISL_TAB_SAVE_DUAL	(1 << 0)
 enum isl_lp_result isl_tab_min(struct isl_tab *tab,
@@ -232,6 +237,7 @@ int isl_tab_rollback(struct isl_tab *tab, struct isl_tab_undo *snap) WARN_UNUSED
 
 struct isl_tab *isl_tab_relax(struct isl_tab *tab, int con) WARN_UNUSED;
 int isl_tab_select_facet(struct isl_tab *tab, int con) WARN_UNUSED;
+int isl_tab_unrestrict(struct isl_tab *tab, int con) WARN_UNUSED;
 
 void isl_tab_dump(__isl_keep struct isl_tab *tab);
 

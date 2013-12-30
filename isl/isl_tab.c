@@ -1,10 +1,12 @@
 /*
  * Copyright 2008-2009 Katholieke Universiteit Leuven
+ * Copyright 2013      Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
  * Written by Sven Verdoolaege, K.U.Leuven, Departement
  * Computerwetenschappen, Celestijnenlaan 200A, B-3001 Leuven, Belgium
+ * and Ecole Normale Superieure, 45 rue d'Ulm, 75230 Paris, France
  */
 
 #include <isl_ctx_private.h>
@@ -34,16 +36,16 @@ struct isl_tab *isl_tab_alloc(struct isl_ctx *ctx,
 	if (!tab->mat)
 		goto error;
 	tab->var = isl_alloc_array(ctx, struct isl_tab_var, n_var);
-	if (!tab->var)
+	if (n_var && !tab->var)
 		goto error;
 	tab->con = isl_alloc_array(ctx, struct isl_tab_var, n_row);
-	if (!tab->con)
+	if (n_row && !tab->con)
 		goto error;
 	tab->col_var = isl_alloc_array(ctx, int, n_var);
-	if (!tab->col_var)
+	if (n_var && !tab->col_var)
 		goto error;
 	tab->row_var = isl_alloc_array(ctx, int, n_row);
-	if (!tab->row_var)
+	if (n_row && !tab->row_var)
 		goto error;
 	for (i = 0; i < n_var; ++i) {
 		tab->var[i].index = i;
@@ -85,6 +87,11 @@ struct isl_tab *isl_tab_alloc(struct isl_ctx *ctx,
 error:
 	isl_tab_free(tab);
 	return NULL;
+}
+
+isl_ctx *isl_tab_get_ctx(struct isl_tab *tab)
+{
+	return tab ? isl_mat_get_ctx(tab->mat) : NULL;
 }
 
 int isl_tab_extend_cons(struct isl_tab *tab, unsigned n_new)
@@ -231,29 +238,29 @@ struct isl_tab *isl_tab_dup(struct isl_tab *tab)
 	if (!dup->mat)
 		goto error;
 	dup->var = isl_alloc_array(tab->mat->ctx, struct isl_tab_var, tab->max_var);
-	if (!dup->var)
+	if (tab->max_var && !dup->var)
 		goto error;
 	for (i = 0; i < tab->n_var; ++i)
 		dup->var[i] = tab->var[i];
 	dup->con = isl_alloc_array(tab->mat->ctx, struct isl_tab_var, tab->max_con);
-	if (!dup->con)
+	if (tab->max_con && !dup->con)
 		goto error;
 	for (i = 0; i < tab->n_con; ++i)
 		dup->con[i] = tab->con[i];
 	dup->col_var = isl_alloc_array(tab->mat->ctx, int, tab->mat->n_col - off);
-	if (!dup->col_var)
+	if ((tab->mat->n_col - off) && !dup->col_var)
 		goto error;
 	for (i = 0; i < tab->n_col; ++i)
 		dup->col_var[i] = tab->col_var[i];
 	dup->row_var = isl_alloc_array(tab->mat->ctx, int, tab->mat->n_row);
-	if (!dup->row_var)
+	if (tab->mat->n_row && !dup->row_var)
 		goto error;
 	for (i = 0; i < tab->n_row; ++i)
 		dup->row_var[i] = tab->row_var[i];
 	if (tab->row_sign) {
 		dup->row_sign = isl_alloc_array(tab->mat->ctx, enum isl_tab_row_sign,
 						tab->mat->n_row);
-		if (!dup->row_sign)
+		if (tab->mat->n_row && !dup->row_sign)
 			goto error;
 		for (i = 0; i < tab->n_row; ++i)
 			dup->row_sign[i] = tab->row_sign[i];
@@ -264,7 +271,7 @@ struct isl_tab *isl_tab_dup(struct isl_tab *tab)
 			goto error;
 		dup->sample_index = isl_alloc_array(tab->mat->ctx, int,
 							tab->samples->n_row);
-		if (!dup->sample_index)
+		if (tab->samples->n_row && !dup->sample_index)
 			goto error;
 		dup->n_sample = tab->n_sample;
 		dup->n_outside = tab->n_outside;
@@ -460,7 +467,7 @@ struct isl_tab *isl_tab_product(struct isl_tab *tab1, struct isl_tab *tab2)
 		goto error;
 	prod->var = isl_alloc_array(tab1->mat->ctx, struct isl_tab_var,
 					tab1->max_var + tab2->max_var);
-	if (!prod->var)
+	if ((tab1->max_var + tab2->max_var) && !prod->var)
 		goto error;
 	for (i = 0; i < tab1->n_var; ++i) {
 		prod->var[i] = tab1->var[i];
@@ -474,7 +481,7 @@ struct isl_tab *isl_tab_product(struct isl_tab *tab1, struct isl_tab *tab2)
 	}
 	prod->con = isl_alloc_array(tab1->mat->ctx, struct isl_tab_var,
 					tab1->max_con +  tab2->max_con);
-	if (!prod->con)
+	if ((tab1->max_con + tab2->max_con) && !prod->con)
 		goto error;
 	for (i = 0; i < tab1->n_con; ++i) {
 		prod->con[i] = tab1->con[i];
@@ -488,7 +495,7 @@ struct isl_tab *isl_tab_product(struct isl_tab *tab1, struct isl_tab *tab2)
 	}
 	prod->col_var = isl_alloc_array(tab1->mat->ctx, int,
 					tab1->n_col + tab2->n_col);
-	if (!prod->col_var)
+	if ((tab1->n_col + tab2->n_col) && !prod->col_var)
 		goto error;
 	for (i = 0; i < tab1->n_col; ++i) {
 		int pos = i < d1 ? i : i + d2;
@@ -505,7 +512,7 @@ struct isl_tab *isl_tab_product(struct isl_tab *tab1, struct isl_tab *tab2)
 	}
 	prod->row_var = isl_alloc_array(tab1->mat->ctx, int,
 					tab1->mat->n_row + tab2->mat->n_row);
-	if (!prod->row_var)
+	if ((tab1->mat->n_row + tab2->mat->n_row) && !prod->row_var)
 		goto error;
 	for (i = 0; i < tab1->n_row; ++i) {
 		int pos = i < r1 ? i : i + r2;
@@ -829,7 +836,7 @@ int isl_tab_push_basis(struct isl_tab *tab)
 	union isl_tab_undo_val u;
 
 	u.col_var = isl_alloc_array(tab->mat->ctx, int, tab->n_col);
-	if (!u.col_var)
+	if (tab->n_col && !u.col_var)
 		return -1;
 	for (i = 0; i < tab->n_col; ++i)
 		u.col_var[i] = tab->col_var[i];
@@ -2598,6 +2605,29 @@ error:
 	return NULL;
 }
 
+/* Remove the sign constraint from constraint "con".
+ *
+ * If the constraint variable was originally marked non-negative,
+ * then we make sure we mark it non-negative again during rollback.
+ */
+int isl_tab_unrestrict(struct isl_tab *tab, int con)
+{
+	struct isl_tab_var *var;
+
+	if (!tab)
+		return -1;
+
+	var = &tab->con[con];
+	if (!var->is_nonneg)
+		return 0;
+
+	var->is_nonneg = 0;
+	if (isl_tab_push_var(tab, isl_tab_undo_unrestrict, var) < 0)
+		return -1;
+
+	return 0;
+}
+
 int isl_tab_select_facet(struct isl_tab *tab, int con)
 {
 	if (!tab)
@@ -2697,6 +2727,106 @@ int isl_tab_detect_implicit_equalities(struct isl_tab *tab)
 	}
 
 	return 0;
+}
+
+/* Update the element of row_var or col_var that corresponds to
+ * constraint tab->con[i] to a move from position "old" to position "i".
+ */
+static int update_con_after_move(struct isl_tab *tab, int i, int old)
+{
+	int *p;
+	int index;
+
+	index = tab->con[i].index;
+	if (index == -1)
+		return 0;
+	p = tab->con[i].is_row ? tab->row_var : tab->col_var;
+	if (p[index] != ~old)
+		isl_die(tab->mat->ctx, isl_error_internal,
+			"broken internal state", return -1);
+	p[index] = ~i;
+
+	return 0;
+}
+
+/* Rotate the "n" constraints starting at "first" to the right,
+ * putting the last constraint in the position of the first constraint.
+ */
+static int rotate_constraints(struct isl_tab *tab, int first, int n)
+{
+	int i, last;
+	struct isl_tab_var var;
+
+	if (n <= 1)
+		return 0;
+
+	last = first + n - 1;
+	var = tab->con[last];
+	for (i = last; i > first; --i) {
+		tab->con[i] = tab->con[i - 1];
+		if (update_con_after_move(tab, i, i - 1) < 0)
+			return -1;
+	}
+	tab->con[first] = var;
+	if (update_con_after_move(tab, first, last) < 0)
+		return -1;
+
+	return 0;
+}
+
+/* Make the equalities that are implicit in "bmap" but that have been
+ * detected in the corresponding "tab" explicit in "bmap" and update
+ * "tab" to reflect the new order of the constraints.
+ *
+ * In particular, if inequality i is an implicit equality then
+ * isl_basic_map_inequality_to_equality will move the inequality
+ * in front of the other equality and it will move the last inequality
+ * in the position of inequality i.
+ * In the tableau, the inequalities of "bmap" are stored after the equalities
+ * and so the original order
+ *
+ *		E E E E E A A A I B B B B L
+ *
+ * is changed into
+ *
+ *		I E E E E E A A A L B B B B
+ *
+ * where I is the implicit equality, the E are equalities,
+ * the A inequalities before I, the B inequalities after I and
+ * L the last inequality.
+ * We therefore need to rotate to the right two sets of constraints,
+ * those up to and including I and those after I.
+ *
+ * If "tab" contains any constraints that are not in "bmap" then they
+ * appear after those in "bmap" and they should be left untouched.
+ *
+ * Note that this function leaves "bmap" in a temporary state
+ * as it does not call isl_basic_map_gauss.  Calling this function
+ * is the responsibility of the caller.
+ */
+__isl_give isl_basic_map *isl_tab_make_equalities_explicit(struct isl_tab *tab,
+	__isl_take isl_basic_map *bmap)
+{
+	int i;
+
+	if (!tab || !bmap)
+		return isl_basic_map_free(bmap);
+	if (tab->empty)
+		return bmap;
+
+	for (i = bmap->n_ineq - 1; i >= 0; --i) {
+		if (!isl_tab_is_equality(tab, bmap->n_eq + i))
+			continue;
+		isl_basic_map_inequality_to_equality(bmap, i);
+		if (rotate_constraints(tab, 0, tab->n_eq + i + 1) < 0)
+			return isl_basic_map_free(bmap);
+		if (rotate_constraints(tab, tab->n_eq + i + 1,
+					bmap->n_ineq - i) < 0)
+			return isl_basic_map_free(bmap);
+		tab->n_eq++;
+	}
+
+	return bmap;
 }
 
 static int con_is_redundant(struct isl_tab *tab, struct isl_tab_var *var)
@@ -2949,6 +3079,21 @@ static int unrelax(struct isl_tab *tab, struct isl_tab_var *var)
 	return 0;
 }
 
+/* Undo the operation performed by isl_tab_unrestrict.
+ *
+ * In particular, mark the variable as being non-negative and make
+ * sure the sample value respects this constraint.
+ */
+static int ununrestrict(struct isl_tab *tab, struct isl_tab_var *var)
+{
+	var->is_nonneg = 1;
+
+	if (var->is_row && restore_row(tab, var) < -1)
+		return -1;
+
+	return 0;
+}
+
 static int perform_undo_var(struct isl_tab *tab, struct isl_tab_undo *undo) WARN_UNUSED;
 static int perform_undo_var(struct isl_tab *tab, struct isl_tab_undo *undo)
 {
@@ -2991,6 +3136,8 @@ static int perform_undo_var(struct isl_tab *tab, struct isl_tab_undo *undo)
 		break;
 	case isl_tab_undo_relax:
 		return unrelax(tab, var);
+	case isl_tab_undo_unrestrict:
+		return ununrestrict(tab, var);
 	default:
 		isl_die(tab->mat->ctx, isl_error_internal,
 			"perform_undo_var called on invalid undo record",
@@ -3019,7 +3166,7 @@ static int restore_basis(struct isl_tab *tab, int *col_var)
 	unsigned off = 2 + tab->M;
 
 	extra = isl_alloc_array(tab->mat->ctx, int, tab->n_col);
-	if (!extra)
+	if (tab->n_col && !extra)
 		goto error;
 	for (i = 0; i < tab->n_col; ++i) {
 		for (j = 0; j < tab->n_col; ++j)
@@ -3091,6 +3238,7 @@ static int perform_undo(struct isl_tab *tab, struct isl_tab_undo *undo)
 	case isl_tab_undo_zero:
 	case isl_tab_undo_allocate:
 	case isl_tab_undo_relax:
+	case isl_tab_undo_unrestrict:
 		return perform_undo_var(tab, undo);
 	case isl_tab_undo_bmap_eq:
 		return isl_basic_map_free_equality(tab->bmap, 1);

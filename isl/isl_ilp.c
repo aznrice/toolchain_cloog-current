@@ -16,6 +16,7 @@
 #include <isl_aff_private.h>
 #include <isl_local_space_private.h>
 #include <isl_mat_private.h>
+#include <isl_val_private.h>
 
 /* Given a basic set "bset", construct a basic set U such that for
  * each element x in U, the whole unit box positioned at x is inside
@@ -375,6 +376,7 @@ enum isl_lp_result isl_basic_set_opt(__isl_keep isl_basic_set *bset, int max,
 	isl_mat *bset_div = NULL;
 	isl_mat *div = NULL;
 	enum isl_lp_result res;
+	int bset_n_div, obj_n_div;
 
 	if (!bset || !obj)
 		return isl_lp_error;
@@ -388,16 +390,18 @@ enum isl_lp_result isl_basic_set_opt(__isl_keep isl_basic_set *bset, int max,
 			"expecting integer affine expression",
 			return isl_lp_error);
 
-	if (bset->n_div == 0 && obj->ls->div->n_row == 0)
+	bset_n_div = isl_basic_set_dim(bset, isl_dim_div);
+	obj_n_div = isl_aff_dim(obj, isl_dim_div);
+	if (bset_n_div == 0 && obj_n_div == 0)
 		return basic_set_opt(bset, max, obj, opt);
 
 	bset = isl_basic_set_copy(bset);
 	obj = isl_aff_copy(obj);
 
 	bset_div = extract_divs(bset);
-	exp1 = isl_alloc_array(ctx, int, bset_div->n_row);
-	exp2 = isl_alloc_array(ctx, int, obj->ls->div->n_row);
-	if (!bset_div || !exp1 || !exp2)
+	exp1 = isl_alloc_array(ctx, int, bset_n_div);
+	exp2 = isl_alloc_array(ctx, int, obj_n_div);
+	if (!bset_div || (bset_n_div && !exp1) || (obj_n_div && !exp2))
 		goto error;
 
 	div = isl_merge_divs(bset_div, obj->ls->div, exp1, exp2);
@@ -512,4 +516,123 @@ enum isl_lp_result isl_set_min(__isl_keep isl_set *set,
 	__isl_keep isl_aff *obj, isl_int *opt)
 {
 	return isl_set_opt(set, 0, obj, opt);
+}
+
+/* Convert the result of a function that returns an isl_lp_result
+ * to an isl_val.  The numerator of "v" is set to the optimal value
+ * if lp_res is isl_lp_ok.  "max" is set if a maximum was computed.
+ *
+ * Return "v" with denominator set to 1 if lp_res is isl_lp_ok.
+ * Return NULL on error.
+ * Return a NaN if lp_res is isl_lp_empty.
+ * Return infinity or negative infinity if lp_res is isl_lp_unbounded,
+ * depending on "max".
+ */
+static __isl_give isl_val *convert_lp_result(enum isl_lp_result lp_res,
+	__isl_take isl_val *v, int max)
+{
+	isl_ctx *ctx;
+
+	if (lp_res == isl_lp_ok) {
+		isl_int_set_si(v->d, 1);
+		return isl_val_normalize(v);
+	}
+	ctx = isl_val_get_ctx(v);
+	isl_val_free(v);
+	if (lp_res == isl_lp_error)
+		return NULL;
+	if (lp_res == isl_lp_empty)
+		return isl_val_nan(ctx);
+	if (max)
+		return isl_val_infty(ctx);
+	else
+		return isl_val_neginfty(ctx);
+}
+
+/* Return the minimum (maximum if max is set) of the integer affine
+ * expression "obj" over the points in "bset".
+ *
+ * Return infinity or negative infinity if the optimal value is unbounded and
+ * NaN if "bset" is empty.
+ *
+ * Call isl_basic_set_opt and translate the results.
+ */
+__isl_give isl_val *isl_basic_set_opt_val(__isl_keep isl_basic_set *bset,
+	int max, __isl_keep isl_aff *obj)
+{
+	isl_ctx *ctx;
+	isl_val *res;
+	enum isl_lp_result lp_res;
+
+	if (!bset || !obj)
+		return NULL;
+
+	ctx = isl_aff_get_ctx(obj);
+	res = isl_val_alloc(ctx);
+	if (!res)
+		return NULL;
+	lp_res = isl_basic_set_opt(bset, max, obj, &res->n);
+	return convert_lp_result(lp_res, res, max);
+}
+
+/* Return the maximum of the integer affine
+ * expression "obj" over the points in "bset".
+ *
+ * Return infinity or negative infinity if the optimal value is unbounded and
+ * NaN if "bset" is empty.
+ */
+__isl_give isl_val *isl_basic_set_max_val(__isl_keep isl_basic_set *bset,
+	__isl_keep isl_aff *obj)
+{
+	return isl_basic_set_opt_val(bset, 1, obj);
+}
+
+/* Return the minimum (maximum if max is set) of the integer affine
+ * expression "obj" over the points in "set".
+ *
+ * Return infinity or negative infinity if the optimal value is unbounded and
+ * NaN if "bset" is empty.
+ *
+ * Call isl_set_opt and translate the results.
+ */
+__isl_give isl_val *isl_set_opt_val(__isl_keep isl_set *set, int max,
+	__isl_keep isl_aff *obj)
+{
+	isl_ctx *ctx;
+	isl_val *res;
+	enum isl_lp_result lp_res;
+
+	if (!set || !obj)
+		return NULL;
+
+	ctx = isl_aff_get_ctx(obj);
+	res = isl_val_alloc(ctx);
+	if (!res)
+		return NULL;
+	lp_res = isl_set_opt(set, max, obj, &res->n);
+	return convert_lp_result(lp_res, res, max);
+}
+
+/* Return the minimum of the integer affine
+ * expression "obj" over the points in "set".
+ *
+ * Return infinity or negative infinity if the optimal value is unbounded and
+ * NaN if "bset" is empty.
+ */
+__isl_give isl_val *isl_set_min_val(__isl_keep isl_set *set,
+	__isl_keep isl_aff *obj)
+{
+	return isl_set_opt_val(set, 0, obj);
+}
+
+/* Return the maximum of the integer affine
+ * expression "obj" over the points in "set".
+ *
+ * Return infinity or negative infinity if the optimal value is unbounded and
+ * NaN if "bset" is empty.
+ */
+__isl_give isl_val *isl_set_max_val(__isl_keep isl_set *set,
+	__isl_keep isl_aff *obj)
+{
+	return isl_set_opt_val(set, 1, obj);
 }

@@ -83,8 +83,7 @@ libisl_la_SOURCES = \
 	isl_hmap_map_basic_set.h \
 	isl_ilp.c \
 	isl_input.c \
-	isl_list.c \
-	isl_list_private.h \
+	isl_int.h \
 	isl_local_space_private.h \
 	isl_local_space.c \
 	isl_lp.c \
@@ -122,6 +121,7 @@ libisl_la_SOURCES = \
 	isl_scan.h \
 	isl_schedule.c \
 	isl_schedule_private.h \
+	isl_set_list.c \
 	isl_sort.c \
 	isl_sort.h \
 	isl_space.c \
@@ -137,6 +137,9 @@ libisl_la_SOURCES = \
 	isl_transitive_closure.c \
 	isl_union_map.c \
 	isl_union_map_private.h \
+	isl_val.c \
+	isl_val_gmp.c \
+	isl_val_private.h \
 	isl_vec.c \
 	isl_version.c \
 	isl_vertices_private.h \
@@ -250,6 +253,9 @@ pkginclude_HEADERS = \
 	include/isl/union_map_type.h \
 	include/isl/union_set.h \
 	include/isl/union_set_type.h \
+	include/isl/val.h \
+	include/isl/val_gmp.h \
+	include/isl/val_int.h \
 	include/isl/vec.h \
 	include/isl/version.h \
 	include/isl/vertices.h
@@ -276,6 +282,8 @@ EXTRA_DIST = \
 	doc/mypod2latex \
 	doc/manual.tex \
 	doc/user.pod \
+	interface/all.h \
+	interface/isl.py.top \
 	test_inputs
 
 dist-hook:

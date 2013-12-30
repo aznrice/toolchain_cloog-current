@@ -16,6 +16,11 @@ struct isl_aff {
 	isl_vec		*v;
 };
 
+#undef EL
+#define EL isl_aff
+
+#include <isl_list_templ.h>
+
 struct isl_pw_aff_piece {
 	struct isl_set *set;
 	struct isl_aff *aff;
@@ -31,6 +36,11 @@ struct isl_pw_aff {
 	size_t size;
 	struct isl_pw_aff_piece p[1];
 };
+
+#undef EL
+#define EL isl_pw_aff
+
+#include <isl_list_templ.h>
 
 struct isl_pw_multi_aff_piece {
 	isl_set *set;
@@ -78,6 +88,9 @@ __isl_give isl_pw_aff *isl_pw_aff_set_rational(__isl_take isl_pw_aff *pwaff);
 __isl_give isl_pw_aff_list *isl_pw_aff_list_set_rational(
 	__isl_take isl_pw_aff_list *list);
 
+int isl_aff_check_match_domain_space(__isl_keep isl_aff *aff,
+	__isl_keep isl_space *space);
+
 #undef BASE
 #define BASE aff
 
@@ -102,12 +115,16 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_project_out(
 void isl_seq_substitute(isl_int *p, int pos, isl_int *subs,
 	int p_len, int subs_len, isl_int v);
 void isl_seq_preimage(isl_int *dst, isl_int *src,
-	__isl_keep isl_multi_aff *ma, int n_div_ma, int n_div_bset,
+	__isl_keep isl_multi_aff *ma, int n_before, int n_after,
+	int n_div_ma, int n_div_bmap,
 	isl_int f, isl_int c1, isl_int c2, isl_int g, int has_denom);
 
 __isl_give isl_pw_multi_aff *isl_pw_multi_aff_substitute(
 	__isl_take isl_pw_multi_aff *pma, enum isl_dim_type type, unsigned pos,
 	__isl_keep isl_pw_aff *subs);
+
+int isl_pw_aff_check_match_domain_space(__isl_keep isl_pw_aff *pa,
+	__isl_keep isl_space *space);
 
 #undef BASE
 #define BASE pw_aff

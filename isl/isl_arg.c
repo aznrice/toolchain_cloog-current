@@ -130,6 +130,17 @@ void isl_args_set_defaults(struct isl_args *args, void *opt)
 	}
 }
 
+static void free_args(struct isl_arg *arg, void *opt);
+
+static void free_child(struct isl_arg *arg, void *opt)
+{
+	if (arg->offset == (size_t) -1)
+		free_args(arg->u.child.child->args, opt);
+	else
+		isl_args_free(arg->u.child.child,
+			    *(void **)(((char *)opt) + arg->offset));
+}
+
 static void free_str_list(struct isl_arg *arg, void *opt)
 {
 	int i;
@@ -141,6 +152,12 @@ static void free_str_list(struct isl_arg *arg, void *opt)
 	free(list);
 }
 
+static void free_user(struct isl_arg *arg, void *opt)
+{
+	if (arg->u.user.clear)
+		arg->u.user.clear(((char *)opt) + arg->offset);
+}
+
 static void free_args(struct isl_arg *arg, void *opt)
 {
 	int i;
@@ -148,11 +165,7 @@ static void free_args(struct isl_arg *arg, void *opt)
 	for (i = 0; arg[i].type != isl_arg_end; ++i) {
 		switch (arg[i].type) {
 		case isl_arg_child:
-			if (arg[i].offset == (size_t) -1)
-				free_args(arg[i].u.child.child->args, opt);
-			else
-				isl_args_free(arg[i].u.child.child,
-				    *(void **)(((char *)opt) + arg[i].offset));
+			free_child(&arg[i], opt);
 			break;
 		case isl_arg_arg:
 		case isl_arg_str:
@@ -162,8 +175,7 @@ static void free_args(struct isl_arg *arg, void *opt)
 			free_str_list(&arg[i], opt);
 			break;
 		case isl_arg_user:
-			if (arg[i].u.user.clear)
-				arg[i].u.user.clear(((char *)opt) + arg[i].offset);
+			free_user(&arg[i], opt);
 			break;
 		case isl_arg_alias:
 		case isl_arg_bool:
@@ -714,10 +726,9 @@ static int parse_choice_option(struct isl_arg *decl, char **arg,
 
 	if (!has_argument && (!arg[1] || arg[1][0] == '-')) {
 		unsigned u = decl->u.choice.default_selected;
+		*(unsigned *)(((char *)opt) + decl->offset) = u;
 		if (decl->u.choice.set)
 			decl->u.choice.set(opt, u);
-		else
-			*(unsigned *)(((char *)opt) + decl->offset) = u;
 
 		return 1;
 	}
@@ -732,10 +743,9 @@ static int parse_choice_option(struct isl_arg *decl, char **arg,
 			continue;
 
 		u = decl->u.choice.choice[i].value;
+		*(unsigned *)(((char *)opt) + decl->offset) = u;
 		if (decl->u.choice.set)
 			decl->u.choice.set(opt, u);
-		else
-			*(unsigned *)(((char *)opt) + decl->offset) = u;
 
 		return has_argument ? 1 : 2;
 	}
@@ -805,17 +815,17 @@ static int parse_bool_option(struct isl_arg *decl, char **arg,
 			char *endptr;
 			int val = strtol(arg[1], &endptr, 0);
 			if (*endptr == '\0' && (val == 0 || val == 1)) {
+				if (decl->offset != (size_t) -1)
+					*p = val;
 				if (decl->u.b.set)
 					decl->u.b.set(opt, val);
-				else if (decl->offset != (size_t) -1)
-					*p = val;
 				return 2;
 			}
 		}
+		if (decl->offset != (size_t) -1)
+			*p = 1;
 		if (decl->u.b.set)
 			decl->u.b.set(opt, 1);
-		else if (decl->offset != (size_t) -1)
-			*p = 1;
 
 		return 1;
 	}
@@ -848,10 +858,10 @@ static int parse_bool_option(struct isl_arg *decl, char **arg,
 	}
 
 	if (match_long_name(decl, name, name + strlen(name))) {
+		if (decl->offset != (size_t) -1)
+			*p = 0;
 		if (decl->u.b.set)
 			decl->u.b.set(opt, 0);
-		else if (decl->offset != (size_t) -1)
-			*p = 0;
 
 		return 1;
 	}
@@ -965,29 +975,26 @@ static int parse_long_option(struct isl_arg *decl, char **arg,
 
 	if (has_argument) {
 		long l = strtol(val, NULL, 0);
+		*p = l;
 		if (decl->u.l.set)
 			decl->u.l.set(opt, l);
-		else
-			*p = l;
 		return 1;
 	}
 
 	if (arg[1]) {
 		long l = strtol(arg[1], &endptr, 0);
 		if (*endptr == '\0') {
+			*p = l;
 			if (decl->u.l.set)
 				decl->u.l.set(opt, l);
-			else
-				*p = l;
 			return 2;
 		}
 	}
 
 	if (decl->u.l.default_value != decl->u.l.default_selected) {
+		*p = decl->u.l.default_selected;
 		if (decl->u.l.set)
 			decl->u.l.set(opt, decl->u.l.default_selected);
-		else
-			*p = decl->u.l.default_selected;
 		return 1;
 	}
 
@@ -1117,7 +1124,7 @@ static void print_version_and_exit(struct isl_arg *decl)
 
 static int drop_argument(int argc, char **argv, int drop, int n)
 {
-	for (; drop < argc; ++drop)
+	for (; drop + n < argc; ++drop)
 		argv[drop] = argv[drop + n];
 
 	return argc - n;
@@ -1144,21 +1151,17 @@ static int next_arg(struct isl_arg *arg, int a)
 	return -1;
 }
 
-/* Unless ISL_ARG_SKIP_HELP is set, check if any of the arguments is
+/* Unless ISL_ARG_SKIP_HELP is set, check if "arg" is
  * equal to "--help" and if so call print_help_and_exit.
  */
-static void check_help(struct isl_args *args, int argc, char **argv, void *opt,
+static void check_help(struct isl_args *args, char *arg, char *prog, void *opt,
 	unsigned flags)
 {
-	int i;
-
 	if (ISL_FL_ISSET(flags, ISL_ARG_SKIP_HELP))
 		return;
 
-	for (i = 1; i < argc; ++i) {
-		if (strcmp(argv[i], "--help") == 0)
-			print_help_and_exit(args->args, argv[0], opt);
-	}
+	if (strcmp(arg, "--help") == 0)
+		print_help_and_exit(args->args, prog, opt);
 }
 
 int isl_args_parse(struct isl_args *args, int argc, char **argv, void *opt,
@@ -1170,8 +1173,6 @@ int isl_args_parse(struct isl_args *args, int argc, char **argv, void *opt,
 	int n;
 
 	n = n_arg(args->args);
-
-	check_help(args, argc, argv, opt, flags);
 
 	for (i = 1; i < argc; ++i) {
 		if ((strcmp(argv[i], "--version") == 0 ||
@@ -1198,6 +1199,7 @@ int isl_args_parse(struct isl_args *args, int argc, char **argv, void *opt,
 				++skip;
 			continue;
 		}
+		check_help(args, argv[1 + skip], argv[0], opt, flags);
 		parsed = parse_option(args->args, &argv[1 + skip], NULL, opt);
 		if (parsed)
 			argc = drop_argument(argc, argv, 1 + skip, parsed);

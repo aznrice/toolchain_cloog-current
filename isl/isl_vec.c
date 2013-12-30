@@ -10,6 +10,7 @@
 #include <isl_ctx_private.h>
 #include <isl/seq.h>
 #include <isl/vec.h>
+#include <isl_val_private.h>
 
 isl_ctx *isl_vec_get_ctx(__isl_keep isl_vec *vec)
 {
@@ -188,6 +189,21 @@ int isl_vec_get_element(__isl_keep isl_vec *vec, int pos, isl_int *v)
 	return 0;
 }
 
+/* Extract the element at position "pos" of "vec".
+ */
+__isl_give isl_val *isl_vec_get_element_val(__isl_keep isl_vec *vec, int pos)
+{
+	isl_ctx *ctx;
+
+	if (!vec)
+		return NULL;
+	ctx = isl_vec_get_ctx(vec);
+	if (pos < 0 || pos >= vec->size)
+		isl_die(ctx, isl_error_invalid, "position out of range",
+			return NULL);
+	return isl_val_int_from_isl_int(ctx, vec->el[pos]);
+}
+
 __isl_give isl_vec *isl_vec_set_element(__isl_take isl_vec *vec,
 	int pos, isl_int v)
 {
@@ -218,6 +234,37 @@ __isl_give isl_vec *isl_vec_set_element_si(__isl_take isl_vec *vec,
 error:
 	isl_vec_free(vec);
 	return NULL;
+}
+
+/* Replace the element at position "pos" of "vec" by "v".
+ */
+__isl_give isl_vec *isl_vec_set_element_val(__isl_take isl_vec *vec,
+	int pos, __isl_take isl_val *v)
+{
+	if (!v)
+		return isl_vec_free(vec);
+	if (!isl_val_is_int(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"expecting integer value", goto error);
+	vec = isl_vec_set_element(vec, pos, v->n);
+	isl_val_free(v);
+	return vec;
+error:
+	isl_val_free(v);
+	return isl_vec_free(vec);
+}
+
+/* Compare the elements of "vec1" and "vec2" at position "pos".
+ */
+int isl_vec_cmp_element(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2,
+	int pos)
+{
+	if (!vec1 || !vec2)
+		return 0;
+	if (pos < 0 || pos >= vec1->size || pos >= vec2->size)
+		isl_die(isl_vec_get_ctx(vec1), isl_error_invalid,
+			"position out of range", return 0);
+	return isl_int_cmp(vec1->el[pos], vec2->el[pos]);
 }
 
 int isl_vec_is_equal(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2)
@@ -283,6 +330,26 @@ __isl_give isl_vec *isl_vec_set_si(__isl_take isl_vec *vec, int v)
 		return NULL;
 	isl_seq_set_si(vec->el, v, vec->size);
 	return vec;
+}
+
+/* Replace all elements of "vec" by "v".
+ */
+__isl_give isl_vec *isl_vec_set_val(__isl_take isl_vec *vec,
+	__isl_take isl_val *v)
+{
+	vec = isl_vec_cow(vec);
+	if (!vec || !v)
+		goto error;
+	if (!isl_val_is_int(v))
+		isl_die(isl_val_get_ctx(v), isl_error_invalid,
+			"expecting integer value", goto error);
+	isl_seq_set(vec->el, v->n, vec->size);
+	isl_val_free(v);
+	return vec;
+error:
+	isl_vec_free(vec);
+	isl_val_free(v);
+	return NULL;
 }
 
 __isl_give isl_vec *isl_vec_clr(__isl_take isl_vec *vec)

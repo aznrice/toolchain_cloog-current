@@ -12,30 +12,6 @@
 #include <isl_ast_private.h>
 #include <isl_ast_build_private.h>
 
-/* Compute the minimum of the integer affine expression "obj" over the points
- * in build->domain and put the result in *opt.
- */
-enum isl_lp_result isl_ast_build_min(__isl_keep isl_ast_build *build,
-	__isl_keep isl_aff *obj, isl_int *opt)
-{
-	if (!build)
-		return isl_lp_error;
-
-	return isl_set_min(build->domain, obj, opt);
-}
-
-/* Compute the maximum of the integer affine expression "obj" over the points
- * in build->domain and put the result in *opt.
- */
-enum isl_lp_result isl_ast_build_max(__isl_keep isl_ast_build *build,
-	__isl_keep isl_aff *obj, isl_int *opt)
-{
-	if (!build)
-		return isl_lp_error;
-
-	return isl_set_max(build->domain, obj, opt);
-}
-
 /* Compute the "opposite" of the (numerator of the) argument of a div
  * with denonimator "d".
  *
@@ -43,10 +19,11 @@ enum isl_lp_result isl_ast_build_max(__isl_keep isl_ast_build *build,
  *
  *	-aff + (d - 1)
  */
-static __isl_give isl_aff *oppose_div_arg(__isl_take isl_aff *aff, isl_int d)
+static __isl_give isl_aff *oppose_div_arg(__isl_take isl_aff *aff,
+	__isl_take isl_val *d)
 {
 	aff = isl_aff_neg(aff);
-	aff = isl_aff_add_constant(aff, d);
+	aff = isl_aff_add_constant_val(aff, d);
 	aff = isl_aff_add_constant_si(aff, -1);
 
 	return aff;
@@ -55,8 +32,8 @@ static __isl_give isl_aff *oppose_div_arg(__isl_take isl_aff *aff, isl_int d)
 /* Create an isl_ast_expr evaluating the div at position "pos" in "ls".
  * The result is simplified in terms of build->domain.
  *
- * "v" points to the coefficient of the div in the expression where it
- * appears and may be updated by this function.
+ * *change_sign is set by this function if the sign of
+ * the expression has changed.
  * "ls" is known to be non-NULL.
  *
  * Let the div be of the form floor(e/d).
@@ -77,30 +54,30 @@ static __isl_give isl_aff *oppose_div_arg(__isl_take isl_aff *aff, isl_int d)
  *
  * and still use pdiv_q.
  */
-static __isl_give isl_ast_expr *var_div(isl_int *v,
+static __isl_give isl_ast_expr *var_div(int *change_sign,
 	__isl_keep isl_local_space *ls,
 	int pos, __isl_keep isl_ast_build *build)
 {
 	isl_ctx *ctx = isl_local_space_get_ctx(ls);
 	isl_aff *aff;
 	isl_ast_expr *num, *den;
-	isl_int d;
+	isl_val *d;
 	enum isl_ast_op_type type;
 
 	aff = isl_local_space_get_div(ls, pos);
-	isl_int_init(d);
-	isl_aff_get_denominator(aff, &d);
-	aff = isl_aff_scale(aff, d);
-	den = isl_ast_expr_alloc_int(ctx, d);
+	d = isl_aff_get_denominator_val(aff);
+	aff = isl_aff_scale_val(aff, isl_val_copy(d));
+	den = isl_ast_expr_from_val(isl_val_copy(d));
 
 	type = isl_ast_op_fdiv_q;
 	if (isl_options_get_ast_build_prefer_pdiv(ctx)) {
 		int non_neg = isl_ast_build_aff_is_nonneg(build, aff);
 		if (non_neg >= 0 && !non_neg) {
-			isl_aff *opp = oppose_div_arg(isl_aff_copy(aff), d);
+			isl_aff *opp = oppose_div_arg(isl_aff_copy(aff),
+							isl_val_copy(d));
 			non_neg = isl_ast_build_aff_is_nonneg(build, opp);
 			if (non_neg >= 0 && non_neg) {
-				isl_int_neg(*v, *v);
+				*change_sign = 1;
 				isl_aff_free(aff);
 				aff = opp;
 			} else
@@ -112,7 +89,7 @@ static __isl_give isl_ast_expr *var_div(isl_int *v,
 			type = isl_ast_op_pdiv_q;
 	}
 
-	isl_int_clear(d);
+	isl_val_free(d);
 	num = isl_ast_expr_from_aff(aff, build);
 	return isl_ast_expr_alloc_binary(type, num, den);
 }
@@ -120,22 +97,23 @@ static __isl_give isl_ast_expr *var_div(isl_int *v,
 /* Create an isl_ast_expr evaluating the specified dimension of "ls".
  * The result is simplified in terms of build->domain.
  *
- * "v" points to the coefficient of the specified dimension
- * in the expression where it appears and may be updated by this function.
+ * *change_sign is set by this function if the sign of
+ * the expression has changed.
  *
  * The isl_ast_expr is constructed based on the type of the dimension.
  * - divs are constructed by var_div
  * - set variables are constructed from the iterator isl_ids in "build"
  * - parameters are constructed from the isl_ids in "ls"
  */
-static __isl_give isl_ast_expr *var(isl_int *v, __isl_keep isl_local_space *ls,
+static __isl_give isl_ast_expr *var(int *change_sign,
+	__isl_keep isl_local_space *ls,
 	enum isl_dim_type type, int pos, __isl_keep isl_ast_build *build)
 {
 	isl_ctx *ctx = isl_local_space_get_ctx(ls);
 	isl_id *id;
 
 	if (type == isl_dim_div)
-		return var_div(v, ls, pos, build);
+		return var_div(change_sign, ls, pos, build);
 
 	if (type == isl_dim_set) {
 		id = isl_ast_build_get_iterator_id(build, pos);
@@ -157,7 +135,7 @@ static int ast_expr_is_zero(__isl_keep isl_ast_expr *expr)
 		return -1;
 	if (expr->type != isl_ast_expr_int)
 		return 0;
-	return isl_int_is_zero(expr->u.i);
+	return isl_val_is_zero(expr->u.v);
 }
 
 /* Create an expression representing the sum of "expr1" and "expr2",
@@ -227,8 +205,9 @@ error:
  * v is assumed to be non-negative.
  * The result is simplified in terms of build->domain.
  */
-static __isl_give isl_ast_expr *isl_ast_expr_mod(isl_int v,
-	__isl_keep isl_aff *aff, isl_int d, __isl_keep isl_ast_build *build)
+static __isl_give isl_ast_expr *isl_ast_expr_mod(__isl_keep isl_val *v,
+	__isl_keep isl_aff *aff, __isl_keep isl_val *d,
+	__isl_keep isl_ast_build *build)
 {
 	isl_ctx *ctx;
 	isl_ast_expr *expr;
@@ -240,11 +219,11 @@ static __isl_give isl_ast_expr *isl_ast_expr_mod(isl_int v,
 	ctx = isl_aff_get_ctx(aff);
 	expr = isl_ast_expr_from_aff(isl_aff_copy(aff), build);
 
-	c = isl_ast_expr_alloc_int(ctx, d);
+	c = isl_ast_expr_from_val(isl_val_copy(d));
 	expr = isl_ast_expr_alloc_binary(isl_ast_op_pdiv_r, expr, c);
 
-	if (!isl_int_is_one(v)) {
-		c = isl_ast_expr_alloc_int(ctx, v);
+	if (!isl_val_is_one(v)) {
+		c = isl_ast_expr_from_val(isl_val_copy(v));
 		expr = isl_ast_expr_mul(c, expr);
 	}
 
@@ -262,25 +241,31 @@ static __isl_give isl_ast_expr *isl_ast_expr_mod(isl_int v,
  *
  *	(isl_ast_op_mul, expr(v), expr)
  */
-static __isl_give isl_ast_expr *scale(__isl_take isl_ast_expr *expr, isl_int v)
+static __isl_give isl_ast_expr *scale(__isl_take isl_ast_expr *expr,
+	__isl_take isl_val *v)
 {
-	isl_ctx *ctx;
 	isl_ast_expr *c;
 
-	if (!expr)
-		return NULL;
-	if (isl_int_is_one(v))
+	if (!expr || !v)
+		goto error;
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
 		return expr;
+	}
 
-	if (isl_int_is_negone(v)) {
+	if (isl_val_is_negone(v)) {
+		isl_val_free(v);
 		expr = isl_ast_expr_neg(expr);
 	} else {
-		ctx = isl_ast_expr_get_ctx(expr);
-		c = isl_ast_expr_alloc_int(ctx, v);
+		c = isl_ast_expr_from_val(v);
 		expr = isl_ast_expr_mul(c, expr);
 	}
 
 	return expr;
+error:
+	isl_val_free(v);
+	isl_ast_expr_free(expr);
+	return NULL;
 }
 
 /* Add an expression for "*v" times the specified dimension of "ls"
@@ -306,21 +291,25 @@ static __isl_give isl_ast_expr *scale(__isl_take isl_ast_expr *expr, isl_int v)
 static __isl_give isl_ast_expr *isl_ast_expr_add_term(
 	__isl_take isl_ast_expr *expr,
 	__isl_keep isl_local_space *ls, enum isl_dim_type type, int pos,
-	isl_int *v, __isl_keep isl_ast_build *build)
+	__isl_take isl_val *v, __isl_keep isl_ast_build *build)
 {
 	isl_ast_expr *term;
+	int change_sign;
 
 	if (!expr)
 		return NULL;
 
-	term = var(v, ls, type, pos, build);
+	change_sign = 0;
+	term = var(&change_sign, ls, type, pos, build);
+	if (change_sign)
+		v = isl_val_neg(v);
 
-	if (isl_int_is_neg(*v) && !ast_expr_is_zero(expr)) {
-		isl_int_neg(*v, *v);
-		term = scale(term, *v);
+	if (isl_val_is_neg(v) && !ast_expr_is_zero(expr)) {
+		v = isl_val_neg(v);
+		term = scale(term, v);
 		return ast_expr_sub(expr, term);
 	} else {
-		term = scale(term, *v);
+		term = scale(term, v);
 		return ast_expr_add(expr, term);
 	}
 }
@@ -328,26 +317,32 @@ static __isl_give isl_ast_expr *isl_ast_expr_add_term(
 /* Add an expression for "v" to expr.
  */
 static __isl_give isl_ast_expr *isl_ast_expr_add_int(
-	__isl_take isl_ast_expr *expr, isl_int v)
+	__isl_take isl_ast_expr *expr, __isl_take isl_val *v)
 {
 	isl_ctx *ctx;
 	isl_ast_expr *expr_int;
 
-	if (!expr)
-		return NULL;
+	if (!expr || !v)
+		goto error;
 
-	if (isl_int_is_zero(v))
+	if (isl_val_is_zero(v)) {
+		isl_val_free(v);
 		return expr;
+	}
 
 	ctx = isl_ast_expr_get_ctx(expr);
-	if (isl_int_is_neg(v) && !ast_expr_is_zero(expr)) {
-		isl_int_neg(v, v);
-		expr_int = isl_ast_expr_alloc_int(ctx, v);
+	if (isl_val_is_neg(v) && !ast_expr_is_zero(expr)) {
+		v = isl_val_neg(v);
+		expr_int = isl_ast_expr_from_val(v);
 		return ast_expr_sub(expr, expr_int);
 	} else {
-		expr_int = isl_ast_expr_alloc_int(ctx, v);
+		expr_int = isl_ast_expr_from_val(v);
 		return ast_expr_add(expr, expr_int);
 	}
+error:
+	isl_ast_expr_free(expr);
+	isl_val_free(v);
+	return NULL;
 }
 
 /* Check if "aff" involves any (implicit) modulo computations based
@@ -384,57 +379,59 @@ static __isl_give isl_ast_expr *isl_ast_expr_add_int(
  */
 static __isl_give isl_aff *extract_modulo(__isl_take isl_aff *aff,
 	__isl_keep isl_ast_expr **pos, __isl_keep isl_ast_expr **neg,
-	__isl_keep isl_ast_build *build, int j, isl_int v)
+	__isl_keep isl_ast_build *build, int j, __isl_take isl_val *v)
 {
 	isl_ast_expr *expr;
 	isl_aff *div;
 	int s;
 	int mod;
-	isl_int d;
+	isl_val *d;
 
-	isl_int_init(d);
 	div = isl_aff_get_div(aff, j);
-	isl_aff_get_denominator(div, &d);
-	mod = isl_int_is_divisible_by(v, d);
+	d = isl_aff_get_denominator_val(div);
+	mod = isl_val_is_divisible_by(v, d);
 	if (mod) {
-		div = isl_aff_scale(div, d);
+		div = isl_aff_scale_val(div, isl_val_copy(d));
 		mod = isl_ast_build_aff_is_nonneg(build, div);
 		if (mod >= 0 && !mod) {
-			isl_aff *opp = oppose_div_arg(isl_aff_copy(div), d);
+			isl_aff *opp = oppose_div_arg(isl_aff_copy(div),
+							isl_val_copy(d));
 			mod = isl_ast_build_aff_is_nonneg(build, opp);
 			if (mod >= 0 && mod) {
 				isl_aff_free(div);
 				div = opp;
-				isl_int_neg(v, v);
+				v = isl_val_neg(v);
 			} else
 				isl_aff_free(opp);
 		}
 	}
 	if (mod < 0) {
 		isl_aff_free(div);
-		isl_int_clear(d);
+		isl_val_free(d);
+		isl_val_free(v);
 		return isl_aff_free(aff);
 	} else if (!mod) {
 		isl_aff_free(div);
-		isl_int_clear(d);
+		isl_val_free(d);
+		isl_val_free(v);
 		return aff;
 	}
-	isl_int_divexact(v, v, d);
-	s = isl_int_sgn(v);
-	isl_int_abs(v, v);
+	v = isl_val_div(v, isl_val_copy(d));
+	s = isl_val_sgn(v);
+	v = isl_val_abs(v);
 	expr = isl_ast_expr_mod(v, div, d, build);
+	isl_val_free(d);
 	if (s > 0)
 		*neg = ast_expr_add(*neg, expr);
 	else
 		*pos = ast_expr_add(*pos, expr);
 	aff = isl_aff_set_coefficient_si(aff, isl_dim_div, j, 0);
 	if (s < 0)
-		isl_int_neg(v, v);
-	div = isl_aff_scale(div, v);
-	isl_aff_get_denominator(aff, &d);
-	div = isl_aff_scale_down(div, d);
+		v = isl_val_neg(v);
+	div = isl_aff_scale_val(div, v);
+	d = isl_aff_get_denominator_val(aff);
+	div = isl_aff_scale_down_val(div, d);
 	aff = isl_aff_add(aff, div);
-	isl_int_clear(d);
 
 	return aff;
 }
@@ -444,23 +441,23 @@ static __isl_give isl_aff *extract_modulo(__isl_take isl_aff *aff,
  * to those modulo computations to *pos and/or *neg.
  * We only do this if the option ast_build_prefer_pdiv is set.
  *
+ * "aff" is assumed to be an integer affine expression.
+ *
  * A modulo expression is of the form
  *
  *	a mod m = a - m * floor(a / m)
  *
  * To detect them in aff, we look for terms of the form
  *
- *	(f * m * floor(a / m)) / d
+ *	f * m * floor(a / m)
  *
  * rewrite them as
  *
- *	(f * (a - (a mod m))) / d = (f * a) / d - (f * (a mod m)) / d
+ *	f * (a - (a mod m)) = f * a - f * (a mod m)
  *
  * and extract out -f * (a mod m).
  * In particular, if f > 0, we add (f * (a mod m)) to *neg.
  * If f < 0, we add ((-f) * (a mod m)) to *pos.
- *
- * The caller is responsible for dividing *neg and/or *pos by d.
  */
 static __isl_give isl_aff *extract_modulos(__isl_take isl_aff *aff,
 	__isl_keep isl_ast_expr **pos, __isl_keep isl_ast_expr **neg,
@@ -468,7 +465,6 @@ static __isl_give isl_aff *extract_modulos(__isl_take isl_aff *aff,
 {
 	isl_ctx *ctx;
 	int j, n;
-	isl_int v;
 
 	if (!aff)
 		return NULL;
@@ -477,20 +473,22 @@ static __isl_give isl_aff *extract_modulos(__isl_take isl_aff *aff,
 	if (!isl_options_get_ast_build_prefer_pdiv(ctx))
 		return aff;
 
-	isl_int_init(v);
-
 	n = isl_aff_dim(aff, isl_dim_div);
 	for (j = 0; j < n; ++j) {
-		isl_aff_get_coefficient(aff, isl_dim_div, j, &v);
-		if (isl_int_is_zero(v) ||
-		    isl_int_is_one(v) || isl_int_is_negone(v))
+		isl_val *v;
+
+		v = isl_aff_get_coefficient_val(aff, isl_dim_div, j);
+		if (!v)
+			return isl_aff_free(aff);
+		if (isl_val_is_zero(v) ||
+		    isl_val_is_one(v) || isl_val_is_negone(v)) {
+			isl_val_free(v);
 			continue;
+		}
 		aff = extract_modulo(aff, pos, neg, build, j, v);
 		if (!aff)
 			break;
 	}
-
-	isl_int_clear(v);
 
 	return aff;
 }
@@ -507,8 +505,8 @@ __isl_give isl_ast_expr *isl_ast_expr_from_aff(__isl_take isl_aff *aff,
 	__isl_keep isl_ast_build *build)
 {
 	int i, j;
-	isl_int v;
 	int n;
+	isl_val *v, *d;
 	isl_ctx *ctx = isl_aff_get_ctx(aff);
 	isl_ast_expr *expr, *expr_neg;
 	enum isl_dim_type t[] = { isl_dim_param, isl_dim_in, isl_dim_div };
@@ -521,35 +519,38 @@ __isl_give isl_ast_expr *isl_ast_expr_from_aff(__isl_take isl_aff *aff,
 	expr = isl_ast_expr_alloc_int_si(ctx, 0);
 	expr_neg = isl_ast_expr_alloc_int_si(ctx, 0);
 
+	d = isl_aff_get_denominator_val(aff);
+	aff = isl_aff_scale_val(aff, isl_val_copy(d));
+
 	aff = extract_modulos(aff, &expr, &expr_neg, build);
 	expr = ast_expr_sub(expr, expr_neg);
 
-	isl_int_init(v);
 	ls = isl_aff_get_domain_local_space(aff);
 
 	for (i = 0; i < 3; ++i) {
 		n = isl_aff_dim(aff, t[i]);
 		for (j = 0; j < n; ++j) {
-			isl_aff_get_coefficient(aff, t[i], j, &v);
-			if (isl_int_is_zero(v))
+			v = isl_aff_get_coefficient_val(aff, t[i], j);
+			if (!v)
+				expr = isl_ast_expr_free(expr);
+			if (isl_val_is_zero(v)) {
+				isl_val_free(v);
 				continue;
+			}
 			expr = isl_ast_expr_add_term(expr,
-							ls, l[i], j, &v, build);
+							ls, l[i], j, v, build);
 		}
 	}
 
-	isl_aff_get_constant(aff, &v);
+	v = isl_aff_get_constant_val(aff);
 	expr = isl_ast_expr_add_int(expr, v);
 
-	isl_aff_get_denominator(aff, &v);
-	if (!isl_int_is_one(v)) {
-		isl_ast_expr *d;
-		d = isl_ast_expr_alloc_int(ctx, v);
-		expr = isl_ast_expr_div(expr, d);
-	}
+	if (!isl_val_is_one(d))
+		expr = isl_ast_expr_div(expr, isl_ast_expr_from_val(d));
+	else
+		isl_val_free(d);
 
 	isl_local_space_free(ls);
-	isl_int_clear(v);
 	isl_aff_free(aff);
 	return expr;
 }
@@ -562,36 +563,49 @@ static __isl_give isl_ast_expr *add_signed_terms(__isl_take isl_ast_expr *expr,
 	__isl_keep isl_aff *aff, int sign, __isl_keep isl_ast_build *build)
 {
 	int i, j;
-	isl_int v;
+	isl_val *v;
 	enum isl_dim_type t[] = { isl_dim_param, isl_dim_in, isl_dim_div };
 	enum isl_dim_type l[] = { isl_dim_param, isl_dim_set, isl_dim_div };
 	isl_local_space *ls;
 
-	isl_int_init(v);
 	ls = isl_aff_get_domain_local_space(aff);
 
 	for (i = 0; i < 3; ++i) {
 		int n = isl_aff_dim(aff, t[i]);
 		for (j = 0; j < n; ++j) {
-			isl_aff_get_coefficient(aff, t[i], j, &v);
-			if (sign * isl_int_sgn(v) <= 0)
+			v = isl_aff_get_coefficient_val(aff, t[i], j);
+			if (sign * isl_val_sgn(v) <= 0) {
+				isl_val_free(v);
 				continue;
-			isl_int_abs(v, v);
+			}
+			v = isl_val_abs(v);
 			expr = isl_ast_expr_add_term(expr,
-						ls, l[i], j, &v, build);
+						ls, l[i], j, v, build);
 		}
 	}
 
-	isl_aff_get_constant(aff, &v);
-	if (sign * isl_int_sgn(v) > 0) {
-		isl_int_abs(v, v);
-		expr = isl_ast_expr_add_int(expr, v);
-	}
-
 	isl_local_space_free(ls);
-	isl_int_clear(v);
 
 	return expr;
+}
+
+/* Should the constant term "v" be considered positive?
+ *
+ * A positive constant will be added to "pos" by the caller,
+ * while a negative constant will be added to "neg".
+ * If either "pos" or "neg" is exactly zero, then we prefer
+ * to add the constant "v" to that side, irrespective of the sign of "v".
+ * This results in slightly shorter expressions and may reduce the risk
+ * of overflows.
+ */
+static int constant_is_considered_positive(__isl_keep isl_val *v,
+	__isl_keep isl_ast_expr *pos, __isl_keep isl_ast_expr *neg)
+{
+	if (ast_expr_is_zero(pos))
+		return 1;
+	if (ast_expr_is_zero(neg))
+		return 0;
+	return isl_val_is_pos(v);
 }
 
 /* Construct an isl_ast_expr that evaluates the condition "constraint",
@@ -613,6 +627,10 @@ static __isl_give isl_ast_expr *add_signed_terms(__isl_take isl_ast_expr *expr,
  * However, if the first expression is an integer constant (and the second
  * is not), then we swap the two expressions.  This ensures that we construct,
  * e.g., "i <= 5" rather than "5 >= i".
+ *
+ * Furthermore, is there are no terms with positive coefficients (or no terms
+ * with negative coefficients), then the constant term is added to "pos"
+ * (or "neg"), ignoring the sign of the constant term.
  */
 static __isl_give isl_ast_expr *isl_ast_expr_from_constraint(
 	__isl_take isl_constraint *constraint, __isl_keep isl_ast_build *build)
@@ -622,6 +640,7 @@ static __isl_give isl_ast_expr *isl_ast_expr_from_constraint(
 	isl_ast_expr *expr_neg;
 	isl_ast_expr *expr;
 	isl_aff *aff;
+	isl_val *v;
 	int eq;
 	enum isl_ast_op_type type;
 
@@ -638,6 +657,14 @@ static __isl_give isl_ast_expr *isl_ast_expr_from_constraint(
 
 	expr_pos = add_signed_terms(expr_pos, aff, 1, build);
 	expr_neg = add_signed_terms(expr_neg, aff, -1, build);
+
+	v = isl_aff_get_constant_val(aff);
+	if (constant_is_considered_positive(v, expr_pos, expr_neg)) {
+		expr_pos = isl_ast_expr_add_int(expr_pos, v);
+	} else {
+		v = isl_val_neg(v);
+		expr_neg = isl_ast_expr_add_int(expr_neg, v);
+	}
 
 	eq = isl_constraint_is_equality(constraint);
 

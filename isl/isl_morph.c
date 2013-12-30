@@ -473,25 +473,26 @@ error:
  * We basically just call isl_mat_parameter_compression with the right input
  * and then extend the resulting matrix to include the variables.
  *
+ * The implementation assumes that "bset" does not have any equalities
+ * that only involve the parameters and that isl_basic_set_gauss has
+ * been applied to "bset".
+ *
  * Let the equalities be given as
  *
- *	B(p) + A x = 0
+ *	B(p) + A x = 0.
  *
- * and let [H 0] be the Hermite Normal Form of A, then
+ * We use isl_mat_parameter_compression_ext to compute the compression
  *
- *	H^-1 B(p)
- *
- * needs to be integer, so we impose that each row is divisible by
- * the denominator.
+ *	p = T p'.
  */
 __isl_give isl_morph *isl_basic_set_parameter_compression(
 	__isl_keep isl_basic_set *bset)
 {
 	unsigned nparam;
 	unsigned nvar;
+	unsigned n_div;
 	int n_eq;
 	isl_mat *H, *B;
-	isl_vec *d;
 	isl_mat *map, *inv;
 	isl_basic_set *dom, *ran;
 
@@ -503,28 +504,24 @@ __isl_give isl_morph *isl_basic_set_parameter_compression(
 	if (bset->n_eq == 0)
 		return isl_morph_identity(bset);
 
-	isl_assert(bset->ctx, bset->n_div == 0, return NULL);
-
 	n_eq = bset->n_eq;
 	nparam = isl_basic_set_dim(bset, isl_dim_param);
 	nvar = isl_basic_set_dim(bset, isl_dim_set);
+	n_div = isl_basic_set_dim(bset, isl_dim_div);
 
-	isl_assert(bset->ctx, n_eq <= nvar, return NULL);
+	if (isl_seq_first_non_zero(bset->eq[bset->n_eq - 1] + 1 + nparam,
+				    nvar + n_div) == -1)
+		isl_die(isl_basic_set_get_ctx(bset), isl_error_invalid,
+			"input not allowed to have parameter equalities",
+			return NULL);
+	if (n_eq > nvar + n_div)
+		isl_die(isl_basic_set_get_ctx(bset), isl_error_invalid,
+			"input not gaussed", return NULL);
 
-	d = isl_vec_alloc(bset->ctx, n_eq);
 	B = isl_mat_sub_alloc6(bset->ctx, bset->eq, 0, n_eq, 0, 1 + nparam);
-	H = isl_mat_sub_alloc6(bset->ctx, bset->eq, 0, n_eq, 1 + nparam, nvar);
-	H = isl_mat_left_hermite(H, 0, NULL, NULL);
-	H = isl_mat_drop_cols(H, n_eq, nvar - n_eq);
-	H = isl_mat_lin_to_aff(H);
-	H = isl_mat_right_inverse(H);
-	if (!H || !d)
-		goto error;
-	d = isl_vec_set(d, H->row[0][0]);
-	H = isl_mat_drop_rows(H, 0, 1);
-	H = isl_mat_drop_cols(H, 0, 1);
-	B = isl_mat_product(H, B);
-	inv = isl_mat_parameter_compression(B, d);
+	H = isl_mat_sub_alloc6(bset->ctx, bset->eq,
+				0, n_eq, 1 + nparam, nvar + n_div);
+	inv = isl_mat_parameter_compression_ext(B, H);
 	inv = isl_mat_diagonal(inv, isl_mat_identity(bset->ctx, nvar));
 	map = isl_mat_right_inverse(isl_mat_copy(inv));
 
@@ -532,11 +529,6 @@ __isl_give isl_morph *isl_basic_set_parameter_compression(
 	ran = isl_basic_set_universe(isl_space_copy(bset->dim));
 
 	return isl_morph_alloc(dom, ran, map, inv);
-error:
-	isl_mat_free(H);
-	isl_mat_free(B);
-	isl_vec_free(d);
-	return NULL;
 }
 
 /* Add stride constraints to "bset" based on the inverse mapping
@@ -562,6 +554,7 @@ error:
  *
  *	exists alpha in Z^m: B x = d alpha
  *
+ * This function is similar to add_strides in isl_affine_hull.c
  */
 static __isl_give isl_basic_set *add_strides(__isl_take isl_basic_set *bset,
 	__isl_keep isl_morph *morph)

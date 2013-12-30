@@ -1,10 +1,10 @@
-AC_INIT([isl], [0.11.1], [isl-development@googlegroups.com])
+AC_INIT([isl], [0.12.1], [isl-development@googlegroups.com])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 AC_SUBST(versioninfo)
-versioninfo=11:1:1
+versioninfo=12:1:2
 
 if test "x$prefix" != "xNONE"; then
 	prefix_wd=`cd $prefix && pwd`
@@ -48,6 +48,22 @@ system)
 		GMP_LDFLAGS="-L$with_gmp_prefix/lib"
 	fi
 	GMP_LIBS=-lgmp
+	SAVE_CPPFLAGS="$CPPFLAGS"
+	SAVE_LDFLAGS="$LDFLAGS"
+	SAVE_LIBS="$LIBS"
+	CPPFLAGS="$GMP_CPPFLAGS $CPPFLAGS"
+	LDFLAGS="$GMP_LDFLAGS $LDFLAGS"
+	LIBS="$GMP_LIBS $LIBS"
+	AC_CHECK_HEADER([gmp.h], [], [AC_ERROR([gmp.h header not found])])
+	AC_CHECK_LIB([gmp], [main], [], [AC_ERROR([gmp library not found])])
+	AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <gmp.h>]], [[
+		mpz_t n, d;
+		if (mpz_divisible_p(n, d))
+			mpz_divexact_ui(n, n, 4);
+	]])], [], [AC_ERROR([gmp library too old])])
+	CPPFLAGS="$SAVE_CPPFLAGS"
+	LDFLAGS="$SAVE_LDFLAGS"
+	LIBS="$SAVE_LIBS"
 	;;
 build)
 	GMP_CPPFLAGS="-I$gmp_srcdir -I$with_gmp_builddir"
@@ -55,13 +71,39 @@ build)
 	;;
 esac
 SAVE_CPPFLAGS="$CPPFLAGS"
+SAVE_LDFLAGS="$LDFLAGS"
+SAVE_LIBS="$LIBS"
 CPPFLAGS="$GMP_CPPFLAGS $CPPFLAGS"
+LDFLAGS="$GMP_LDFLAGS $LDFLAGS"
+LIBS="$GMP_LIBS $LIBS"
 need_get_memory_functions=false
 AC_CHECK_DECLS(mp_get_memory_functions,[],[
 	need_get_memory_functions=true
 ],[#include <gmp.h>])
+AC_RUN_IFELSE([AC_LANG_PROGRAM([[#include <gmp.h>]], [[
+	mpz_t x,y,g,a,b;
+	mpz_init(x);
+	mpz_init(y);
+	mpz_init(g);
+	mpz_init(a);
+	mpz_init(b);
+	mpz_set_si(x, -1);
+	mpz_set_si(y, 9);
+	mpz_gcdext(g, a, b, x, y);
+	if (mpz_get_si(a) == -1 && mpz_get_si(b) == 0)
+		return 0;
+	else
+		return 1;
+]])], [need_normalized_gcdext=false], [need_normalized_gcdext=true],
+[need_normalized_gcdext=true])
 CPPFLAGS="$SAVE_CPPFLAGS"
+LDFLAGS="$SAVE_LDFLAGS"
+LIBS="$SAVE_LIBS"
 AM_CONDITIONAL(NEED_GET_MEMORY_FUNCTIONS, test x$need_get_memory_functions = xtrue)
+if test $need_normalized_gcdext = true; then
+AC_DEFINE([GMP_NORMALIZE_GCDEXT], [],
+	[result of mpz_gcdext needs to be normalized])
+fi
 
 AX_SUBMODULE(piplib,no|system|build,no)
 
@@ -112,6 +154,7 @@ AC_SUBST(CLANG_LIBS)
 AX_SUBMODULE(clang,system|no,no)
 case "$with_clang" in
 system)
+	AC_PROG_GREP
 	llvm_config="llvm-config"
 	AC_CHECK_PROG([llvm_config_found], ["$llvm_config"], [yes])
 	if test "x$with_clang_prefix" != "x"; then
@@ -126,7 +169,12 @@ system)
 	CLANG_CXXFLAGS=`$llvm_config --cxxflags`
 	CLANG_LDFLAGS=`$llvm_config --ldflags`
 	targets=`$llvm_config --targets-built`
-	CLANG_LIBS=`$llvm_config --libs $targets asmparser support mc`
+	components="$targets asmparser bitreader support mc"
+	$llvm_config --components | $GREP option > /dev/null 2> /dev/null
+	if test $? -eq 0; then
+		components="$components option"
+	fi
+	CLANG_LIBS=`$llvm_config --libs $components`
 	CLANG_PREFIX=`$llvm_config --prefix`
 	AC_DEFINE_UNQUOTED(CLANG_PREFIX, ["$CLANG_PREFIX"],
 				[Clang installation prefix])
@@ -177,6 +225,19 @@ system)
 		TargetInfo::CreateTargetInfo(*Diags, TO);
 	], [AC_DEFINE([CREATETARGETINFO_TAKES_POINTER], [],
 		      [Define if TargetInfo::CreateTargetInfo takes pointer])])
+	AC_TRY_COMPILE([#include <clang/Frontend/CompilerInstance.h>], [
+		using namespace clang;
+		DiagnosticConsumer *client;
+		CompilerInstance *Clang;
+		Clang->createDiagnostics(client);
+	], [], [AC_DEFINE([CREATEDIAGNOSTICS_TAKES_ARG], [],
+	[Define if CompilerInstance::createDiagnostics takes argc and argv])])
+	AC_TRY_COMPILE([#include <clang/Lex/HeaderSearchOptions.h>], [
+		using namespace clang;
+		HeaderSearchOptions HSO;
+		HSO.AddPath("", frontend::Angled, false, false);
+	], [AC_DEFINE([ADDPATH_TAKES_4_ARGUMENTS], [],
+		[Define if HeaderSearchOptions::AddPath takes 4 arguments])])
 	AC_LANG_POP
 	CPPFLAGS="$SAVE_CPPFLAGS"
 

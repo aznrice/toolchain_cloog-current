@@ -7,7 +7,6 @@
  * Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
-#include <isl_list_private.h>
 #include <isl_ast_private.h>
 #include <isl_ast_build_expr.h>
 #include <isl_ast_build_private.h>
@@ -178,6 +177,8 @@ static __isl_give isl_set *extract_hoistable_guard(
 
 	depth = isl_ast_build_get_depth(build);
 	if (depth < isl_set_dim(guard, isl_dim_set)) {
+		guard = isl_set_remove_divs_involving_dims(guard,
+						isl_dim_set, depth, 1);
 		guard = isl_set_eliminate(guard, isl_dim_set, depth, 1);
 		guard = isl_set_compute_divs(guard);
 	}
@@ -207,6 +208,78 @@ static __isl_give isl_set *extract_hoistable_guard(
 	return guard;
 }
 
+/* Internal data structure used inside insert_if.
+ *
+ * list is the list of guarded nodes created by each call to insert_if.
+ * node is the original node that is guarded by insert_if.
+ * build is the build in which the AST is constructed.
+ */
+struct isl_insert_if_data {
+	isl_ast_node_list *list;
+	isl_ast_node *node;
+	isl_ast_build *build;
+};
+
+static int insert_if(__isl_take isl_basic_set *bset, void *user);
+
+/* Insert an if node around "node" testing the condition encoded
+ * in guard "guard".
+ *
+ * If the user does not want any disjunctions in the if conditions
+ * and if "guard" does involve a disjunction, then we make the different
+ * disjuncts disjoint and insert an if node corresponding to each disjunct
+ * around a copy of "node".  The result is then a block node containing
+ * this sequence of guarded copies of "node".
+ */
+static __isl_give isl_ast_node *ast_node_insert_if(
+	__isl_take isl_ast_node *node, __isl_take isl_set *guard,
+	__isl_keep isl_ast_build *build)
+{
+	struct isl_insert_if_data data;
+	isl_ctx *ctx;
+
+	ctx = isl_ast_build_get_ctx(build);
+	if (isl_options_get_ast_build_allow_or(ctx) ||
+	    isl_set_n_basic_set(guard) <= 1) {
+		isl_ast_node *if_node;
+		isl_ast_expr *expr;
+
+		expr = isl_ast_build_expr_from_set(build, guard);
+
+		if_node = isl_ast_node_alloc_if(expr);
+		return isl_ast_node_if_set_then(if_node, node);
+	}
+
+	guard = isl_set_make_disjoint(guard);
+
+	data.list = isl_ast_node_list_alloc(ctx, 0);
+	data.node = node;
+	data.build = build;
+	if (isl_set_foreach_basic_set(guard, &insert_if, &data) < 0)
+		data.list = isl_ast_node_list_free(data.list);
+
+	isl_set_free(guard);
+	isl_ast_node_free(data.node);
+	return isl_ast_node_alloc_block(data.list);
+}
+
+/* Insert an if node around a copy of "data->node" testing the condition
+ * encoded in guard "bset" and add the result to data->list.
+ */
+static int insert_if(__isl_take isl_basic_set *bset, void *user)
+{
+	struct isl_insert_if_data *data = user;
+	isl_ast_node *node;
+	isl_set *set;
+
+	set = isl_set_from_basic_set(bset);
+	node = isl_ast_node_copy(data->node);
+	node = ast_node_insert_if(node, set, data->build);
+	data->list = isl_ast_node_list_add(data->list, node);
+
+	return 0;
+}
+
 /* Insert an if node around graft->node testing the condition encoded
  * in guard "guard", assuming guard involves any conditions.
  */
@@ -215,8 +288,6 @@ static __isl_give isl_ast_graft *insert_if_node(
 	__isl_keep isl_ast_build *build)
 {
 	int univ;
-	isl_ast_node *node;
-	isl_ast_expr *expr;
 
 	if (!graft)
 		goto error;
@@ -232,11 +303,8 @@ static __isl_give isl_ast_graft *insert_if_node(
 	build = isl_ast_build_copy(build);
 	build = isl_ast_build_set_enforced(build,
 					isl_ast_graft_get_enforced(graft));
-	expr = isl_ast_build_expr_from_set(build, guard);
+	graft->node = ast_node_insert_if(graft->node, guard, build);
 	isl_ast_build_free(build);
-
-	node = isl_ast_node_alloc_if(expr);
-	graft->node = isl_ast_node_if_set_then(node, graft->node);
 
 	if (!graft->node)
 		return isl_ast_graft_free(graft);
@@ -452,7 +520,7 @@ static __isl_give isl_ast_graft_list *insert_pending_guard_nodes(
 	allow_else = isl_options_get_ast_build_allow_else(ctx);
 
 	n_if = 0;
-	if (n > 0) {
+	if (n > 1) {
 		if_node = isl_alloc_array(ctx, struct isl_if_node, n - 1);
 		if (!if_node)
 			return isl_ast_graft_list_free(list);
@@ -617,7 +685,8 @@ static __isl_give isl_basic_set *extract_shared_enforced(
 /* Record "guard" in "graft" so that it will be enforced somewhere
  * up the tree.  If the graft already has a guard, then it may be partially
  * redundant in combination with the new guard and in the context
- * of build->domain.  We therefore (re)compute the gist of the intersection.
+ * of build->domain.  We therefore (re)compute the gist of the intersection
+ * and coalesce the result.
  */
 static __isl_give isl_ast_graft *store_guard(__isl_take isl_ast_graft *graft,
 	__isl_take isl_set *guard, __isl_keep isl_ast_build *build)
@@ -637,6 +706,7 @@ static __isl_give isl_ast_graft *store_guard(__isl_take isl_ast_graft *graft,
 
 	graft->guard = isl_set_intersect(graft->guard, guard);
 	graft->guard = isl_ast_build_compute_gist(build, graft->guard);
+	graft->guard = isl_set_coalesce(graft->guard);
 	if (!graft->guard)
 		return isl_ast_graft_free(graft);
 
@@ -679,11 +749,15 @@ static __isl_give isl_ast_graft_list *gist_guards(
 /* Combine the grafts in the list into a single graft.
  *
  * If "up" is set then the resulting graft will be used at an outer level.
+ * In this case, "build" refers to the outer level, while "sub_build"
+ * refers to the inner level.  If "up" is not set, then the same build
+ * should be passed to both arguments.
  *
  * The guard is initialized to the shared guard of the list elements (if any),
  * provided it does not depend on the current dimension.
  * The guards in the elements are then simplified with respect to the
- * hoisted guard and materialized as if nodes around the contained AST nodes.
+ * hoisted guard and materialized as if nodes around the contained AST nodes
+ * in the context of "sub_build".
  *
  * The enforced set is initialized to the simple hull of the enforced sets
  * of the elements, provided the ast_build_exploit_nested_bounds option is set
@@ -693,8 +767,8 @@ static __isl_give isl_ast_graft_list *gist_guards(
  * or, if there is only a single element, the node of that element.
  */
 static __isl_give isl_ast_graft *ast_graft_list_fuse(
-	__isl_take isl_ast_graft_list *list,
-	__isl_keep isl_ast_build *build, int up)
+	__isl_take isl_ast_graft_list *list, __isl_keep isl_ast_build *build,
+	__isl_keep isl_ast_build *sub_build, int up)
 {
 	isl_ctx *ctx;
 	isl_ast_node *node;
@@ -708,7 +782,7 @@ static __isl_give isl_ast_graft *ast_graft_list_fuse(
 	ctx = isl_ast_build_get_ctx(build);
 	guard = extract_hoistable_guard(list, build);
 	list = gist_guards(list, guard);
-	list = insert_pending_guard_nodes(list, build);
+	list = insert_pending_guard_nodes(list, sub_build);
 
 	node_list = extract_node_list(list);
 	node = isl_ast_node_from_ast_node_list(node_list);
@@ -741,7 +815,7 @@ __isl_give isl_ast_graft_list *isl_ast_graft_list_fuse(
 		return NULL;
 	if (isl_ast_graft_list_n_ast_graft(list) <= 1)
 		return list;
-	graft = ast_graft_list_fuse(list, build, 0);
+	graft = ast_graft_list_fuse(list, build, build, 0);
 	return isl_ast_graft_list_from_ast_graft(graft);
 }
 
@@ -761,11 +835,13 @@ static __isl_give isl_ast_graft *isl_ast_graft_fuse(
 	list = isl_ast_graft_list_add(list, graft1);
 	list = isl_ast_graft_list_add(list, graft2);
 
-	return ast_graft_list_fuse(list, build, 0);
+	return ast_graft_list_fuse(list, build, build, 0);
 }
 
 /* Allocate a graft for the current level based on the list of grafts
  * of the inner level.
+ * "build" represents the context of the current level.
+ * "sub_build" represents the context of the inner level.
  *
  * The node is initialized to either a block containing the nodes of "children"
  * or, if there is only a single child, the node of that child.
@@ -774,9 +850,9 @@ static __isl_give isl_ast_graft *isl_ast_graft_fuse(
  */
 __isl_give isl_ast_graft *isl_ast_graft_alloc_level(
 	__isl_take isl_ast_graft_list *children,
-	__isl_keep isl_ast_build *build)
+	__isl_keep isl_ast_build *build, __isl_keep isl_ast_build *sub_build)
 {
-	return ast_graft_list_fuse(children, build, 1);
+	return ast_graft_list_fuse(children, build, sub_build, 1);
 }
 
 /* Insert a for node enclosing the current graft->node.
@@ -998,27 +1074,18 @@ __isl_give isl_ast_graft_list *isl_ast_graft_list_preimage_multi_aff(
 
 /* Compare two grafts based on their guards.
  */
-static int cmp_graft(const void *a, const void *b)
+static int cmp_graft(__isl_keep isl_ast_graft *a, __isl_keep isl_ast_graft *b,
+	void *user)
 {
-	isl_ast_graft * const *g1 = a;
-	isl_ast_graft * const *g2 = b;
-
-	return isl_set_plain_cmp((*g1)->guard, (*g2)->guard);
+	return isl_set_plain_cmp(a->guard, b->guard);
 }
 
 /* Order the elements in "list" based on their guards.
  */
-__isl_give isl_ast_graft_list *isl_ast_graft_list_sort(
+__isl_give isl_ast_graft_list *isl_ast_graft_list_sort_guard(
 	__isl_take isl_ast_graft_list *list)
 {
-	if (!list)
-		return NULL;
-	if (list->n <= 1)
-		return list;
-
-	qsort(list->p, list->n, sizeof(list->p[0]), &cmp_graft);
-
-	return list;
+	return isl_ast_graft_list_sort(list, &cmp_graft, NULL);
 }
 
 /* Merge the given two lists into a single list of grafts,

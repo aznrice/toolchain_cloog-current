@@ -26,6 +26,7 @@
 #include <isl_mat_private.h>
 #include <isl_aff_private.h>
 #include <isl/list.h>
+#include <isl_val_private.h>
 
 struct variable {
 	char    	    	*name;
@@ -168,6 +169,86 @@ error:
 	return NULL;
 }
 
+/* Read an isl_val from "s".
+ *
+ * The following token sequences are recognized
+ *
+ *	"infty"		->	infty
+ *	"-" "infty"	->	-infty
+ *	"NaN"		->	NaN
+ *	n "/" d		->	n/d
+ *	v		->	v
+ *
+ * where n, d and v are integer constants.
+ */
+__isl_give isl_val *isl_stream_read_val(struct isl_stream *s)
+{
+	struct isl_token *tok = NULL;
+	struct isl_token *tok2 = NULL;
+	isl_val *val;
+
+	tok = next_token(s);
+	if (!tok) {
+		isl_stream_error(s, NULL, "unexpected EOF");
+		goto error;
+	}
+	if (tok->type == ISL_TOKEN_INFTY) {
+		isl_token_free(tok);
+		return isl_val_infty(s->ctx);
+	}
+	if (tok->type == '-' &&
+	    isl_stream_eat_if_available(s, ISL_TOKEN_INFTY)) {
+		isl_token_free(tok);
+		return isl_val_neginfty(s->ctx);
+	}
+	if (tok->type == ISL_TOKEN_NAN) {
+		isl_token_free(tok);
+		return isl_val_nan(s->ctx);
+	}
+	if (tok->type != ISL_TOKEN_VALUE) {
+		isl_stream_error(s, tok, "expecting value");
+		goto error;
+	}
+
+	if (isl_stream_eat_if_available(s, '/')) {
+		tok2 = next_token(s);
+		if (!tok2) {
+			isl_stream_error(s, NULL, "unexpected EOF");
+			goto error;
+		}
+		if (tok2->type != ISL_TOKEN_VALUE) {
+			isl_stream_error(s, tok2, "expecting value");
+			goto error;
+		}
+		val = isl_val_rat_from_isl_int(s->ctx, tok->u.v, tok2->u.v);
+		val = isl_val_normalize(val);
+	} else {
+		val = isl_val_int_from_isl_int(s->ctx, tok->u.v);
+	}
+
+	isl_token_free(tok);
+	isl_token_free(tok2);
+	return val;
+error:
+	isl_token_free(tok);
+	isl_token_free(tok2);
+	return NULL;
+}
+
+/* Read an isl_val from "str".
+ */
+struct isl_val *isl_val_read_from_str(struct isl_ctx *ctx,
+	const char *str)
+{
+	isl_val *val;
+	struct isl_stream *s = isl_stream_new_str(ctx, str);
+	if (!s)
+		return NULL;
+	val = isl_stream_read_val(s);
+	isl_stream_free(s);
+	return val;
+}
+
 static int accept_cst_factor(struct isl_stream *s, isl_int *f)
 {
 	struct isl_token *tok;
@@ -261,17 +342,51 @@ error:
 	return NULL;
 }
 
+/* Is "tok" the start of an integer division?
+ */
+static int is_start_of_div(struct isl_token *tok)
+{
+	if (!tok)
+		return 0;
+	if (tok->type == '[')
+		return 1;
+	if (tok->type == ISL_TOKEN_FLOOR)
+		return 1;
+	if (tok->type == ISL_TOKEN_CEIL)
+		return 1;
+	if (tok->type == ISL_TOKEN_FLOORD)
+		return 1;
+	if (tok->type == ISL_TOKEN_CEILD)
+		return 1;
+	return 0;
+}
+
+/* Read an integer division from "s" and return it as an isl_pw_aff.
+ *
+ * The integer division can be of the form
+ *
+ *	[<affine expression>]
+ *	floor(<affine expression>)
+ *	ceil(<affine expression>)
+ *	floord(<affine expression>,<denominator>)
+ *	ceild(<affine expression>,<denominator>)
+ */
 static __isl_give isl_pw_aff *accept_div(struct isl_stream *s,
 	__isl_take isl_space *dim, struct vars *v)
 {
 	struct isl_token *tok;
 	int f = 0;
 	int c = 0;
+	int extra = 0;
 	isl_pw_aff *pwaff = NULL;
 
 	if (isl_stream_eat_if_available(s, ISL_TOKEN_FLOORD))
-		f = 1;
+		extra = f = 1;
 	else if (isl_stream_eat_if_available(s, ISL_TOKEN_CEILD))
+		extra = c = 1;
+	else if (isl_stream_eat_if_available(s, ISL_TOKEN_FLOOR))
+		f = 1;
+	else if (isl_stream_eat_if_available(s, ISL_TOKEN_CEIL))
 		c = 1;
 	if (f || c) {
 		if (isl_stream_eat(s, '('))
@@ -283,7 +398,7 @@ static __isl_give isl_pw_aff *accept_div(struct isl_stream *s,
 
 	pwaff = accept_affine(s, isl_space_copy(dim), v);
 
-	if (f || c) {
+	if (extra) {
 		if (isl_stream_eat(s, ','))
 			goto error;
 
@@ -343,6 +458,7 @@ static __isl_give isl_pw_aff *accept_affine_factor(struct isl_stream *s,
 		if (pos < 0)
 			goto error;
 		if (pos >= n) {
+			vars_drop(v, v->n - n);
 			isl_stream_error(s, tok, "unknown identifier");
 			goto error;
 		}
@@ -374,9 +490,7 @@ static __isl_give isl_pw_aff *accept_affine_factor(struct isl_stream *s,
 			goto error;
 		if (isl_stream_eat(s, ')'))
 			goto error;
-	} else if (tok->type == '[' ||
-		    tok->type == ISL_TOKEN_FLOORD ||
-		    tok->type == ISL_TOKEN_CEILD) {
+	} else if (is_start_of_div(tok)) {
 		isl_stream_push_token(s, tok);
 		tok = NULL;
 		res = accept_div(s, isl_space_copy(dim), v);
@@ -462,10 +576,8 @@ static __isl_give isl_pw_aff *accept_affine(struct isl_stream *s,
 			isl_token_free(tok);
 			continue;
 		}
-		if (tok->type == '(' || tok->type == '[' ||
+		if (tok->type == '(' || is_start_of_div(tok) ||
 		    tok->type == ISL_TOKEN_MIN || tok->type == ISL_TOKEN_MAX ||
-		    tok->type == ISL_TOKEN_FLOORD ||
-		    tok->type == ISL_TOKEN_CEILD ||
 		    tok->type == ISL_TOKEN_IDENT ||
 		    tok->type == ISL_TOKEN_AFF) {
 			isl_pw_aff *term;
@@ -548,7 +660,7 @@ static int is_comparator(struct isl_token *tok)
 	}
 }
 
-static struct isl_map *read_disjuncts(struct isl_stream *s,
+static __isl_give isl_map *read_formula(struct isl_stream *s,
 	struct vars *v, __isl_take isl_map *map, int rational);
 static __isl_give isl_pw_aff *accept_extended_affine(struct isl_stream *s,
 	__isl_take isl_space *dim, struct vars *v, int rational);
@@ -638,7 +750,7 @@ static __isl_give isl_pw_aff *accept_extended_affine(struct isl_stream *s,
 
 	isl_stream_push_token(s, tok);
 
-	cond = read_disjuncts(s, v, cond, rational);
+	cond = read_formula(s, v, cond, rational);
 
 	return accept_ternary(s, cond, v, rational);
 }
@@ -941,7 +1053,11 @@ static __isl_give isl_multi_pw_aff *read_tuple_var_list(struct isl_stream *s,
 			new_name = p >= n;
 		}
 
-		if (new_name) {
+		if (tok->type == '*') {
+			if (vars_add_anon(v) < 0)
+				goto error;
+			isl_token_free(tok);
+		} else if (new_name) {
 			res = tuple_set_dim_name(res, i, v->v->name);
 			isl_token_free(tok);
 			if (isl_stream_eat_if_available(s, '='))
@@ -1201,7 +1317,7 @@ static __isl_give isl_map *read_exists(struct isl_stream *s,
 	if (isl_stream_eat(s, ':'))
 		goto error;
 
-	map = read_disjuncts(s, v, map, rational);
+	map = read_formula(s, v, map, rational);
 	map = isl_set_unwrap(isl_map_domain(map));
 
 	vars_drop(v, v->n - n);
@@ -1249,7 +1365,7 @@ static int resolve_paren_expr(struct isl_stream *s,
 	    isl_stream_next_token_is(s, ISL_TOKEN_TRUE) ||
 	    isl_stream_next_token_is(s, ISL_TOKEN_FALSE) ||
 	    isl_stream_next_token_is(s, ISL_TOKEN_MAP)) {
-		map = read_disjuncts(s, v, map, rational);
+		map = read_formula(s, v, map, rational);
 		if (isl_stream_eat(s, ')'))
 			goto error;
 		tok->type = ISL_TOKEN_MAP;
@@ -1284,7 +1400,7 @@ static int resolve_paren_expr(struct isl_stream *s,
 
 	isl_stream_push_token(s, tok2);
 
-	map = read_disjuncts(s, v, map, rational);
+	map = read_formula(s, v, map, rational);
 	if (isl_stream_eat(s, ')'))
 		goto error;
 
@@ -1348,7 +1464,7 @@ static __isl_give isl_map *read_conjuncts(struct isl_stream *s,
 	if (negate)
 		res = isl_map_subtract(isl_map_copy(map), res);
 
-	while (isl_stream_eat_if_available(s, ISL_TOKEN_AND)) {
+	while (res && isl_stream_eat_if_available(s, ISL_TOKEN_AND)) {
 		isl_map *res_i;
 
 		negate = isl_stream_eat_if_available(s, ISL_TOKEN_NOT);
@@ -1383,6 +1499,46 @@ static struct isl_map *read_disjuncts(struct isl_stream *s,
 	}
 
 	isl_map_free(map);
+	return res;
+}
+
+/* Read a first order formula from "s", add the corresponding
+ * constraints to "map" and return the result.
+ *
+ * In particular, read a formula of the form
+ *
+ *	a
+ *
+ * or
+ *
+ *	a implies b
+ *
+ * where a and b are disjunctions.
+ *
+ * In the first case, map is replaced by
+ *
+ *	map \cap { [..] : a }
+ *
+ * In the second case, it is replaced by
+ *
+ *	(map \setminus { [..] : a}) \cup (map \cap { [..] : b })
+ */
+static __isl_give isl_map *read_formula(struct isl_stream *s,
+	struct vars *v, __isl_take isl_map *map, int rational)
+{
+	isl_map *res;
+
+	res = read_disjuncts(s, v, isl_map_copy(map), rational);
+
+	if (isl_stream_eat_if_available(s, ISL_TOKEN_IMPLIES)) {
+		isl_map *res2;
+
+		res = isl_map_subtract(isl_map_copy(map), res);
+		res2 = read_disjuncts(s, v, map, rational);
+		res = isl_map_union(res, res2);
+	} else
+		isl_map_free(map);
+
 	return res;
 }
 
@@ -1685,8 +1841,9 @@ static __isl_give isl_pw_qpolynomial *read_factor(struct isl_stream *s,
 		pwqp = isl_pw_qpolynomial_pow(pwqp, pow);
 	} else if (tok->type == ISL_TOKEN_VALUE) {
 		struct isl_token *tok2;
-		tok2 = isl_stream_next_token(s);
 		isl_qpolynomial *qp;
+
+		tok2 = isl_stream_next_token(s);
 		if (tok2 && tok2->type == '/') {
 			isl_token_free(tok2);
 			tok2 = next_token(s);
@@ -1735,7 +1892,7 @@ static __isl_give isl_pw_qpolynomial *read_factor(struct isl_stream *s,
 		pow = optional_power(s);
 		qp = isl_qpolynomial_var_pow_on_domain(isl_map_get_space(map), pos, pow);
 		pwqp = isl_pw_qpolynomial_from_qpolynomial(qp);
-	} else if (tok->type == '[') {
+	} else if (is_start_of_div(tok)) {
 		isl_pw_aff *pwaff;
 		int pow;
 
@@ -1809,7 +1966,7 @@ static __isl_give isl_pw_qpolynomial *read_term(struct isl_stream *s,
 	return pwqp;
 }
 
-static __isl_give isl_map *read_optional_disjuncts(struct isl_stream *s,
+static __isl_give isl_map *read_optional_formula(struct isl_stream *s,
 	__isl_take isl_map *map, struct vars *v, int rational)
 {
 	struct isl_token *tok;
@@ -1822,7 +1979,7 @@ static __isl_give isl_map *read_optional_disjuncts(struct isl_stream *s,
 	if (tok->type == ':' ||
 	    (tok->type == ISL_TOKEN_OR && !strcmp(tok->u.s, "|"))) {
 		isl_token_free(tok);
-		map = read_disjuncts(s, v, map, rational);
+		map = read_formula(s, v, map, rational);
 	} else
 		isl_stream_push_token(s, tok);
 
@@ -1840,7 +1997,7 @@ static struct isl_obj obj_read_poly(struct isl_stream *s,
 	struct isl_set *set;
 
 	pwqp = read_term(s, map, v);
-	map = read_optional_disjuncts(s, map, v, 0);
+	map = read_optional_formula(s, map, v, 0);
 	set = isl_map_range(map);
 
 	pwqp = isl_pw_qpolynomial_intersect_domain(pwqp, set);
@@ -1878,7 +2035,7 @@ static struct isl_obj obj_read_poly_or_fold(struct isl_stream *s,
 	if (isl_stream_eat(s, ')'))
 		goto error;
 
-	set = read_optional_disjuncts(s, set, v, 0);
+	set = read_optional_formula(s, set, v, 0);
 	pwf = isl_pw_qpolynomial_fold_intersect_domain(pwf, set);
 
 	vars_drop(v, v->n - n);
@@ -1924,7 +2081,7 @@ static struct isl_obj obj_read_body(struct isl_stream *s,
 
 	if (isl_stream_next_token_is(s, ':')) {
 		obj.type = isl_obj_set;
-		obj.v = read_optional_disjuncts(s, map, v, rational);
+		obj.v = read_optional_formula(s, map, v, rational);
 		return obj;
 	}
 
@@ -1952,7 +2109,7 @@ static struct isl_obj obj_read_body(struct isl_stream *s,
 		isl_stream_push_token(s, tok);
 	}
 
-	map = read_optional_disjuncts(s, map, v, rational);
+	map = read_optional_formula(s, map, v, rational);
 
 	vars_drop(v, v->n - n);
 
@@ -2629,7 +2786,7 @@ static __isl_give isl_pw_aff *read_pw_aff_with_dom(struct isl_stream *s,
 	if (isl_stream_eat(s, ']'))
 		goto error;
 
-	dom = read_optional_disjuncts(s, dom, v, 0);
+	dom = read_optional_formula(s, dom, v, 0);
 	pwaff = isl_pw_aff_intersect_domain(pwaff, dom);
 
 	return pwaff;
@@ -2745,6 +2902,47 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_read_from_str(isl_ctx *ctx,
 	pma = isl_stream_read_pw_multi_aff(s);
 	isl_stream_free(s);
 	return pma;
+}
+
+/* Read an isl_union_pw_multi_aff from "s".
+ * We currently read a generic object and if it turns out to be a set or
+ * a map, we convert that to an isl_union_pw_multi_aff.
+ * It would be more efficient if we were to construct
+ * the isl_union_pw_multi_aff directly.
+ */
+__isl_give isl_union_pw_multi_aff *isl_stream_read_union_pw_multi_aff(
+	struct isl_stream *s)
+{
+	struct isl_obj obj;
+
+	obj = obj_read(s);
+	if (!obj.v)
+		return NULL;
+
+	if (obj.type == isl_obj_map || obj.type == isl_obj_set)
+		obj = to_union(s->ctx, obj);
+	if (obj.type == isl_obj_union_map)
+		return isl_union_pw_multi_aff_from_union_map(obj.v);
+	if (obj.type == isl_obj_union_set)
+		return isl_union_pw_multi_aff_from_union_set(obj.v);
+
+	obj.type->free(obj.v);
+	isl_die(s->ctx, isl_error_invalid, "unexpected object type",
+		return NULL);
+}
+
+/* Read an isl_union_pw_multi_aff from "str".
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_read_from_str(
+	isl_ctx *ctx, const char *str)
+{
+	isl_union_pw_multi_aff *upma;
+	struct isl_stream *s = isl_stream_new_str(ctx, str);
+	if (!s)
+		return NULL;
+	upma = isl_stream_read_union_pw_multi_aff(s);
+	isl_stream_free(s);
+	return upma;
 }
 
 /* Assuming "pa" represents a single affine expression defined on a universe

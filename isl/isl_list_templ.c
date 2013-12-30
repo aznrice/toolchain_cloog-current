@@ -1,7 +1,7 @@
 /*
  * Copyright 2008-2009 Katholieke Universiteit Leuven
  * Copyright 2011      INRIA Saclay
- * Copyright 2012      Ecole Normale Superieure
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
@@ -12,6 +12,9 @@
  * and Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
+#include <isl_sort.h>
+#include <isl_tarjan.h>
+
 #define xCAT(A,B) A ## B
 #define CAT(A,B) xCAT(A,B)
 #undef EL
@@ -20,6 +23,8 @@
 #define FN(TYPE,NAME) xFN(TYPE,NAME)
 #define xLIST(EL) EL ## _list
 #define LIST(EL) xLIST(EL)
+#define xS(TYPE,NAME) struct TYPE ## _ ## NAME
+#define S(TYPE,NAME) xS(TYPE,NAME)
 
 isl_ctx *FN(LIST(EL),get_ctx)(__isl_keep LIST(EL) *list)
 {
@@ -281,6 +286,157 @@ int FN(LIST(EL),foreach)(__isl_keep LIST(EL) *list,
 	}
 
 	return 0;
+}
+
+/* Internal data structure for isl_*_list_sort.
+ *
+ * "cmp" is the original comparison function.
+ * "user" is a user provided pointer that should be passed to "cmp".
+ */
+S(LIST(EL),sort_data) {
+	int (*cmp)(__isl_keep EL *a, __isl_keep EL *b, void *user);
+	void *user;
+};
+
+/* Compare two entries of an isl_*_list based on the user provided
+ * comparison function on pairs of isl_* objects.
+ */
+static int FN(LIST(EL),cmp)(const void *a, const void *b, void *user)
+{
+	S(LIST(EL),sort_data) *data = user;
+	EL * const *el1 = a;
+	EL * const *el2 = b;
+
+	return data->cmp(*el1, *el2, data->user);
+}
+
+/* Sort the elements of "list" in ascending order according to
+ * comparison function "cmp".
+ */
+__isl_give LIST(EL) *FN(LIST(EL),sort)(__isl_take LIST(EL) *list,
+	int (*cmp)(__isl_keep EL *a, __isl_keep EL *b, void *user), void *user)
+{
+	S(LIST(EL),sort_data) data = { cmp, user };
+
+	if (!list)
+		return NULL;
+	if (list->n <= 1)
+		return list;
+	list = FN(LIST(EL),cow)(list);
+	if (!list)
+		return NULL;
+
+	if (isl_sort(list->p, list->n, sizeof(list->p[0]),
+			&FN(LIST(EL),cmp), &data) < 0)
+		return FN(LIST(EL),free)(list);
+
+	return list;
+}
+
+/* Internal data structure for isl_*_list_foreach_scc.
+ *
+ * "list" is the original list.
+ * "follows" is the user provided callback that defines the edges of the graph.
+ */
+S(LIST(EL),foreach_scc_data) {
+	LIST(EL) *list;
+	int (*follows)(__isl_keep EL *a, __isl_keep EL *b, void *user);
+	void *follows_user;
+};
+
+/* Does element i of data->list follow element j?
+ *
+ * Use the user provided callback to find out.
+ */
+static int FN(LIST(EL),follows)(int i, int j, void *user)
+{
+	S(LIST(EL),foreach_scc_data) *data = user;
+
+	return data->follows(data->list->p[i], data->list->p[j],
+				data->follows_user);
+}
+
+/* Call "fn" on the sublist of "list" that consists of the elements
+ * with indices specified by the "n" elements of "pos".
+ */
+static int FN(LIST(EL),call_on_scc)(__isl_keep LIST(EL) *list, int *pos, int n,
+	int (*fn)(__isl_take LIST(EL) *scc, void *user), void *user)
+{
+	int i;
+	isl_ctx *ctx;
+	LIST(EL) *slice;
+
+	ctx = FN(LIST(EL),get_ctx)(list);
+	slice = FN(LIST(EL),alloc)(ctx, n);
+	for (i = 0; i < n; ++i) {
+		EL *el;
+
+		el = FN(EL,copy)(list->p[pos[i]]);
+		slice = FN(LIST(EL),add)(slice, el);
+	}
+
+	return fn(slice, user);
+}
+
+/* Call "fn" on each of the strongly connected components (SCCs) of
+ * the graph with as vertices the elements of "list" and
+ * a directed edge from node b to node a iff follows(a, b)
+ * returns 1.  follows should return -1 on error.
+ *
+ * If SCC a contains a node i that follows a node j in another SCC b
+ * (i.e., follows(i, j, user) returns 1), then fn will be called on SCC a
+ * after being called on SCC b.
+ *
+ * We simply call isl_tarjan_graph_init, extract the SCCs from the result and
+ * call fn on each of them.
+ */
+int FN(LIST(EL),foreach_scc)(__isl_keep LIST(EL) *list,
+	int (*follows)(__isl_keep EL *a, __isl_keep EL *b, void *user),
+	void *follows_user,
+	int (*fn)(__isl_take LIST(EL) *scc, void *user), void *fn_user)
+{
+	S(LIST(EL),foreach_scc_data) data = { list, follows, follows_user };
+	int i, n;
+	isl_ctx *ctx;
+	struct isl_tarjan_graph *g;
+
+	if (!list)
+		return -1;
+	if (list->n == 0)
+		return 0;
+	if (list->n == 1)
+		return fn(FN(LIST(EL),copy)(list), fn_user);
+
+	ctx = FN(LIST(EL),get_ctx)(list);
+	n = list->n;
+	g = isl_tarjan_graph_init(ctx, n, &FN(LIST(EL),follows), &data);
+	if (!g)
+		return -1;
+
+	i = 0;
+	do {
+		int first;
+
+		if (g->order[i] == -1)
+			isl_die(ctx, isl_error_internal, "cannot happen",
+				break);
+		first = i;
+		while (g->order[i] != -1) {
+			++i; --n;
+		}
+		if (first == 0 && n == 0) {
+			isl_tarjan_graph_free(g);
+			return fn(FN(LIST(EL),copy)(list), fn_user);
+		}
+		if (FN(LIST(EL),call_on_scc)(list, g->order + first, i - first,
+					    fn, fn_user) < 0)
+			break;
+		++i;
+	} while (n);
+
+	isl_tarjan_graph_free(g);
+
+	return n > 0 ? -1 : 0;
 }
 
 __isl_give LIST(EL) *FN(FN(LIST(EL),from),BASE)(__isl_take EL *el)

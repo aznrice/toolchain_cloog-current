@@ -87,10 +87,9 @@ SOURCES_CORE = \
 	source/union_domain.c \
 	source/version.c
 
-DEFAULT_INCLUDES = -I.
-INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
+AM_CPPFLAGS = -I. -I$(top_builddir)/include -I$(top_srcdir)/include
 AM_CFLAGS = $(CFLAGS_WARN)
-libcloog_isl_la_CPPFLAGS = @ISL_CPPFLAGS@ @OSL_CPPFLAGS@
+libcloog_isl_la_CPPFLAGS = -I. -I$(top_builddir)/include -I$(top_srcdir)/include @ISL_CPPFLAGS@ @OSL_CPPFLAGS@
 libcloog_isl_la_LDFLAGS = -version-info @versioninfo@ \
 	-rpath $(libdir) @ISL_LDFLAGS@ @OSL_LDFLAGS@
 libcloog_isl_la_LIBADD = @ISL_LIBS@ @OSL_LIBS@ $(ISL_LA) $(OSL_LA)
@@ -147,6 +146,10 @@ EXTRA_DIST = \
 install-data-local:
 	@test -z "$(pkgconfig_libdir)" || $(mkdir_p) "$(DESTDIR)$(pkgconfig_libdir)"
 	$(INSTALL_DATA) $(pkgconfig_libfile) "$(DESTDIR)$(pkgconfig_libdir)/$(pkgconfig_libfile)"
+	@test -z "$(DESTDIR)$(libdir)/isl" || $(mkdir_p) "$(DESTDIR)$(libdir)/isl"
+	$(INSTALL_DATA) "$(top_srcdir)/cmake/isl-config.cmake" "$(DESTDIR)$(libdir)/isl/"
+	@test -z "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)" || $(mkdir_p) "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)"
+	$(INSTALL_DATA) "$(top_srcdir)/cmake/cloog-isl-config.cmake" "$(DESTDIR)$(libdir)/$(PACKAGE_NAME)/"
 
 uninstall-local:
 	rm -f "$(DESTDIR)$(pkgconfig_libdir)/$(pkgconfig_libfile)"

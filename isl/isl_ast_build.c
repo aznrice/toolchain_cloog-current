@@ -177,6 +177,7 @@ __isl_give isl_ast_build *isl_ast_build_dup(__isl_keep isl_ast_build *build)
 	dup->strides = isl_vec_copy(build->strides);
 	dup->offsets = isl_multi_aff_copy(build->offsets);
 	dup->executed = isl_union_map_copy(build->executed);
+	dup->single_valued = build->single_valued;
 	dup->options = isl_union_map_copy(build->options);
 	dup->at_each_domain = build->at_each_domain;
 	dup->at_each_domain_user = build->at_each_domain_user;
@@ -732,9 +733,11 @@ __isl_give isl_ast_build *isl_ast_build_set_loop_bounds(
 		set = isl_set_compute_divs(set);
 		build->pending = isl_set_intersect(build->pending,
 							isl_set_copy(set));
-		if (isl_ast_build_has_stride(build, build->depth))
+		if (isl_ast_build_has_stride(build, build->depth)) {
 			build->domain = isl_set_eliminate(build->domain,
 						isl_dim_set, build->depth, 1);
+			build->domain = isl_set_compute_divs(build->domain);
+		}
 	} else {
 		isl_basic_set *generated, *pending;
 
@@ -1014,24 +1017,69 @@ __isl_give isl_id *isl_ast_build_get_iterator_id(
 
 /* Set the stride and offset of the current dimension to the given
  * value and expression.
+ *
+ * If we had already found a stride before, then the two strides
+ * are combined into a single stride.
+ *
+ * In particular, if the new stride information is of the form
+ *
+ *	i = f + s (...)
+ *
+ * and the old stride information is of the form
+ *
+ *	i = f2 + s2 (...)
+ *
+ * then we compute the extended gcd of s and s2
+ *
+ *	a s + b s2 = g,
+ *
+ * with g = gcd(s,s2), multiply the first equation with t1 = b s2/g
+ * and the second with t2 = a s1/g.
+ * This results in
+ *
+ *	i = (b s2 + a s1)/g i = t1 f + t2 f2 + (s s2)/g (...)
+ *
+ * so that t1 f + t2 f2 is the combined offset and (s s2)/g = lcm(s,s2)
+ * is the combined stride.
  */
 static __isl_give isl_ast_build *set_stride(__isl_take isl_ast_build *build,
-	isl_int stride, __isl_take isl_aff *offset)
+	__isl_take isl_val *stride, __isl_take isl_aff *offset)
 {
 	int pos;
 
 	build = isl_ast_build_cow(build);
-	if (!build || !offset)
+	if (!build || !stride || !offset)
 		goto error;
 
 	pos = build->depth;
-	build->strides = isl_vec_set_element(build->strides, pos, stride);
+
+	if (isl_ast_build_has_stride(build, pos)) {
+		isl_val *stride2, *a, *b, *g;
+		isl_aff *offset2;
+
+		stride2 = isl_vec_get_element_val(build->strides, pos);
+		g = isl_val_gcdext(isl_val_copy(stride), isl_val_copy(stride2),
+					&a, &b);
+		a = isl_val_mul(a, isl_val_copy(stride));
+		a = isl_val_div(a, isl_val_copy(g));
+		stride2 = isl_val_div(stride2, g);
+		b = isl_val_mul(b, isl_val_copy(stride2));
+		stride = isl_val_mul(stride, stride2);
+
+		offset2 = isl_multi_aff_get_aff(build->offsets, pos);
+		offset2 = isl_aff_scale_val(offset2, a);
+		offset = isl_aff_scale_val(offset, b);
+		offset = isl_aff_add(offset, offset2);
+	}
+
+	build->strides = isl_vec_set_element_val(build->strides, pos, stride);
 	build->offsets = isl_multi_aff_set_aff(build->offsets, pos, offset);
 	if (!build->strides || !build->offsets)
 		return isl_ast_build_free(build);
 
 	return build;
 error:
+	isl_val_free(stride);
 	isl_aff_free(offset);
 	return isl_ast_build_free(build);
 }
@@ -1052,7 +1100,7 @@ __isl_give isl_set *isl_ast_build_get_stride_constraint(
 {
 	isl_aff *aff;
 	isl_set *set;
-	isl_int stride;
+	isl_val *stride;
 	int pos;
 
 	if (!build)
@@ -1063,15 +1111,11 @@ __isl_give isl_set *isl_ast_build_get_stride_constraint(
 	if (!isl_ast_build_has_stride(build, pos))
 		return isl_set_universe(isl_ast_build_get_space(build, 1));
 
-	isl_int_init(stride);
-
-	isl_ast_build_get_stride(build, pos, &stride);
+	stride = isl_ast_build_get_stride(build, pos);
 	aff = isl_ast_build_get_offset(build, pos);
 	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, pos, -1);
-	aff = isl_aff_mod(aff, stride);
+	aff = isl_aff_mod_val(aff, stride);
 	set = isl_set_from_basic_set(isl_aff_zero_basic_set(aff));
-
-	isl_int_clear(stride);
 
 	return set;
 }
@@ -1094,7 +1138,7 @@ __isl_give isl_multi_aff *isl_ast_build_get_stride_expansion(
 	isl_multi_aff *ma;
 	int pos;
 	isl_aff *aff, *offset;
-	isl_int stride;
+	isl_val *stride;
 
 	if (!build)
 		return NULL;
@@ -1107,14 +1151,12 @@ __isl_give isl_multi_aff *isl_ast_build_get_stride_expansion(
 	if (!isl_ast_build_has_stride(build, pos))
 		return ma;
 
-	isl_int_init(stride);
 	offset = isl_ast_build_get_offset(build, pos);
-	isl_ast_build_get_stride(build, pos, &stride);
+	stride = isl_ast_build_get_stride(build, pos);
 	aff = isl_multi_aff_get_aff(ma, pos);
-	aff = isl_aff_scale(aff, stride);
+	aff = isl_aff_scale_val(aff, stride);
 	aff = isl_aff_add(aff, offset);
 	ma = isl_multi_aff_set_aff(ma, pos, aff);
-	isl_int_clear(stride);
 
 	return ma;
 }
@@ -1143,51 +1185,6 @@ __isl_give isl_ast_build *isl_ast_build_include_stride(
 		return isl_ast_build_free(build);
 
 	return build;
-}
-
-/* Compute x, y and g such that g = gcd(a,b) and a*x+b*y = g */
-static void euclid(isl_int a, isl_int b, isl_int *x, isl_int *y, isl_int *g)
-{
-	isl_int c, d, e, f, tmp;
-
-	isl_int_init(c);
-	isl_int_init(d);
-	isl_int_init(e);
-	isl_int_init(f);
-	isl_int_init(tmp);
-	isl_int_abs(c, a);
-	isl_int_abs(d, b);
-	isl_int_set_si(e, 1);
-	isl_int_set_si(f, 0);
-	while (isl_int_is_pos(d)) {
-		isl_int_tdiv_q(tmp, c, d);
-		isl_int_mul(tmp, tmp, f);
-		isl_int_sub(e, e, tmp);
-		isl_int_tdiv_q(tmp, c, d);
-		isl_int_mul(tmp, tmp, d);
-		isl_int_sub(c, c, tmp);
-		isl_int_swap(c, d);
-		isl_int_swap(e, f);
-	}
-	isl_int_set(*g, c);
-	if (isl_int_is_zero(a))
-		isl_int_set_si(*x, 0);
-	else if (isl_int_is_pos(a))
-		isl_int_set(*x, e);
-	else
-		isl_int_neg(*x, e);
-	if (isl_int_is_zero(b))
-		isl_int_set_si(*y, 0);
-	else {
-		isl_int_mul(tmp, a, *x);
-		isl_int_sub(tmp, c, tmp);
-		isl_int_divexact(*y, tmp, b);
-	}
-	isl_int_clear(c);
-	isl_int_clear(d);
-	isl_int_clear(e);
-	isl_int_clear(f);
-	isl_int_clear(tmp);
 }
 
 /* Information used inside detect_stride.
@@ -1239,7 +1236,8 @@ static int detect_stride(__isl_take isl_constraint *c, void *user)
 {
 	struct isl_detect_stride_data *data = user;
 	int i, n_div;
-	isl_int v, gcd, stride, a, b, m;
+	isl_ctx *ctx;
+	isl_val *v, *stride, *m;
 
 	if (!isl_constraint_is_equality(c) ||
 	    !isl_constraint_involves_dims(c, isl_dim_set, data->pos, 1)) {
@@ -1247,47 +1245,41 @@ static int detect_stride(__isl_take isl_constraint *c, void *user)
 		return 0;
 	}
 
-	isl_int_init(a);
-	isl_int_init(b);
-	isl_int_init(v);
-	isl_int_init(m);
-	isl_int_init(gcd);
-	isl_int_init(stride);
-
-	isl_int_set_si(gcd, 0);
+	ctx = isl_constraint_get_ctx(c);
+	stride = isl_val_zero(ctx);
 	n_div = isl_constraint_dim(c, isl_dim_div);
 	for (i = 0; i < n_div; ++i) {
-		isl_constraint_get_coefficient(c, isl_dim_div, i, &v);
-		isl_int_gcd(gcd, gcd, v);
+		v = isl_constraint_get_coefficient_val(c, isl_dim_div, i);
+		v = isl_val_gcd(stride, v);
 	}
 
-	isl_constraint_get_coefficient(c, isl_dim_set, data->pos, &v);
-	isl_int_gcd(m, v, gcd);
-	isl_int_divexact(stride, gcd, m);
-	isl_int_divexact(v, v, m);
+	v = isl_constraint_get_coefficient_val(c, isl_dim_set, data->pos);
+	m = isl_val_gcd(isl_val_copy(stride), isl_val_copy(v));
+	stride = isl_val_div(stride, isl_val_copy(m));
+	v = isl_val_div(v, isl_val_copy(m));
 
-	if (!isl_int_is_zero(stride) && !isl_int_is_one(stride)) {
+	if (!isl_val_is_zero(stride) && !isl_val_is_one(stride)) {
 		isl_aff *aff;
+		isl_val *gcd, *a, *b;
 
-		euclid(v, stride, &a, &b, &gcd);
+		gcd = isl_val_gcdext(v, isl_val_copy(stride), &a, &b);
+		isl_val_free(gcd);
+		isl_val_free(b);
 
 		aff = isl_constraint_get_aff(c);
 		for (i = 0; i < n_div; ++i)
 			aff = isl_aff_set_coefficient_si(aff,
 							 isl_dim_div, i, 0);
 		aff = isl_aff_set_coefficient_si(aff, isl_dim_in, data->pos, 0);
-		isl_int_neg(a, a);
-		aff = isl_aff_scale(aff, a);
-		aff = isl_aff_scale_down(aff, m);
+		a = isl_val_neg(a);
+		aff = isl_aff_scale_val(aff, a);
+		aff = isl_aff_scale_down_val(aff, m);
 		data->build = set_stride(data->build, stride, aff);
+	} else {
+		isl_val_free(stride);
+		isl_val_free(m);
+		isl_val_free(v);
 	}
-
-	isl_int_clear(stride);
-	isl_int_clear(gcd);
-	isl_int_clear(m);
-	isl_int_clear(v);
-	isl_int_clear(b);
-	isl_int_clear(a);
 
 	isl_constraint_free(c);
 	return 0;
@@ -1528,28 +1520,25 @@ __isl_give isl_ast_build *isl_ast_build_insert_dim(
  * We therefore only need to update stride, offset and the options.
  */
 __isl_give isl_ast_build *isl_ast_build_scale_down(
-	__isl_take isl_ast_build *build, isl_int m,
+	__isl_take isl_ast_build *build, __isl_take isl_val *m,
 	__isl_take isl_union_map *umap)
 {
 	isl_aff *aff;
-	isl_int v;
+	isl_val *v;
 	int depth;
 
 	build = isl_ast_build_cow(build);
-	if (!build || !umap)
+	if (!build || !umap || !m)
 		goto error;
 
 	depth = build->depth;
 
-	isl_int_init(v);
-	if (isl_vec_get_element(build->strides, depth, &v) < 0)
-		build->strides = isl_vec_free(build->strides);
-	isl_int_divexact(v, v, m);
-	build->strides = isl_vec_set_element(build->strides, depth, v);
-	isl_int_clear(v);
+	v = isl_vec_get_element_val(build->strides, depth);
+	v = isl_val_div(v, isl_val_copy(m));
+	build->strides = isl_vec_set_element_val(build->strides, depth, v);
 
 	aff = isl_multi_aff_get_aff(build->offsets, depth);
-	aff = isl_aff_scale_down(aff, m);
+	aff = isl_aff_scale_down_val(aff, m);
 	build->offsets = isl_multi_aff_set_aff(build->offsets, depth, aff);
 	build->options = isl_union_map_apply_domain(build->options, umap);
 	if (!build->strides || !build->offsets || !build->options)
@@ -1557,6 +1546,7 @@ __isl_give isl_ast_build *isl_ast_build_scale_down(
 
 	return build;
 error:
+	isl_val_free(m);
 	isl_union_map_free(umap);
 	return isl_ast_build_free(build);
 }
@@ -1729,16 +1719,17 @@ int isl_ast_build_aff_is_nonneg(__isl_keep isl_ast_build *build,
  */
 int isl_ast_build_has_stride(__isl_keep isl_ast_build *build, int pos)
 {
-	isl_int v;
+	isl_val *v;
 	int has_stride;
 
 	if (!build)
 		return -1;
 
-	isl_int_init(v);
-	isl_vec_get_element(build->strides, pos, &v);
-	has_stride = !isl_int_is_one(v);
-	isl_int_clear(v);
+	v = isl_vec_get_element_val(build->strides, pos);
+	if (!v)
+		return -1;
+	has_stride = !isl_val_is_one(v);
+	isl_val_free(v);
 
 	return has_stride;
 }
@@ -1749,15 +1740,13 @@ int isl_ast_build_has_stride(__isl_keep isl_ast_build *build, int pos)
  *
  * with a an integer, return s through *stride.
  */
-int isl_ast_build_get_stride(__isl_keep isl_ast_build *build, int pos,
-	isl_int *stride)
+__isl_give isl_val *isl_ast_build_get_stride(__isl_keep isl_ast_build *build,
+	int pos)
 {
 	if (!build)
-		return -1;
+		return NULL;
 
-	isl_vec_get_element(build->strides, pos, stride);
-
-	return 0;
+	return isl_vec_get_element_val(build->strides, pos);
 }
 
 /* Given that the dimension at position "pos" takes on values
@@ -1801,6 +1790,26 @@ int isl_ast_build_has_affine_value(__isl_keep isl_ast_build *build,
 		return -1;
 
 	return !involves;
+}
+
+/* Plug in the known values (fixed affine expressions in terms of
+ * parameters and outer loop iterators) of all loop iterators
+ * in the domain of "umap".
+ *
+ * We simply precompose "umap" with build->values.
+ */
+__isl_give isl_union_map *isl_ast_build_substitute_values_union_map_domain(
+	__isl_keep isl_ast_build *build, __isl_take isl_union_map *umap)
+{
+	isl_multi_aff *values;
+
+	if (!build)
+		return isl_union_map_free(umap);
+
+	values = isl_multi_aff_copy(build->values);
+	umap = isl_union_map_preimage_domain_multi_aff(umap, values);
+
+	return umap;
 }
 
 /* Is the current dimension known to attain only a single value?
@@ -1905,7 +1914,8 @@ __isl_give isl_pw_aff *isl_ast_build_compute_gist_pw_aff(
 	if (!build)
 		goto error;
 
-	pa = isl_pw_aff_pullback_multi_aff(pa,
+	if (!isl_set_is_params(build->domain))
+		pa = isl_pw_aff_pullback_multi_aff(pa,
 					isl_multi_aff_copy(build->values));
 	pa = isl_pw_aff_gist(pa, isl_set_copy(build->domain));
 
@@ -2075,4 +2085,21 @@ __isl_give isl_set *isl_ast_build_eliminate(
 	domain = isl_ast_build_eliminate_inner(build, domain);
 	domain = isl_ast_build_eliminate_divs(build, domain);
 	return domain;
+}
+
+/* Replace build->single_valued by "sv".
+ */
+__isl_give isl_ast_build *isl_ast_build_set_single_valued(
+	__isl_take isl_ast_build *build, int sv)
+{
+	if (!build)
+		return build;
+	if (build->single_valued == sv)
+		return build;
+	build = isl_ast_build_cow(build);
+	if (!build)
+		return build;
+	build->single_valued = sv;
+
+	return build;
 }

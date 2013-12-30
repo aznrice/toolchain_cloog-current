@@ -14,6 +14,7 @@
 #include <isl_stream_private.h>
 #include <isl/map.h>
 #include <isl/aff.h>
+#include <isl_val_private.h>
 
 struct isl_keyword {
 	char			*name;
@@ -78,6 +79,39 @@ struct isl_token *isl_token_new(isl_ctx *ctx,
 	tok->is_keyword = 0;
 	tok->u.s = NULL;
 	return tok;
+}
+
+/* Return the type of "tok".
+ */
+int isl_token_get_type(struct isl_token *tok)
+{
+	return tok ? tok->type : ISL_TOKEN_ERROR;
+}
+
+/* Given a token of type ISL_TOKEN_VALUE, return the value it represents.
+ */
+__isl_give isl_val *isl_token_get_val(isl_ctx *ctx, struct isl_token *tok)
+{
+	if (!tok)
+		return NULL;
+	if (tok->type != ISL_TOKEN_VALUE)
+		isl_die(ctx, isl_error_invalid, "not a value token",
+			return NULL);
+
+	return isl_val_int_from_isl_int(ctx, tok->u.v);
+}
+
+/* Given a token of type ISL_TOKEN_STRING, return the string it represents.
+ */
+__isl_give char *isl_token_get_str(isl_ctx *ctx, struct isl_token *tok)
+{
+	if (!tok)
+		return NULL;
+	if (tok->type != ISL_TOKEN_STRING)
+		isl_die(ctx, isl_error_invalid, "not a string token",
+			return NULL);
+
+	return strdup(tok->u.s);
 }
 
 void isl_token_free(struct isl_token *tok)
@@ -265,6 +299,8 @@ static enum isl_token_type check_keywords(struct isl_stream *s)
 		return ISL_TOKEN_AND;
 	if (!strcasecmp(s->buffer, "or"))
 		return ISL_TOKEN_OR;
+	if (!strcasecmp(s->buffer, "implies"))
+		return ISL_TOKEN_IMPLIES;
 	if (!strcasecmp(s->buffer, "not"))
 		return ISL_TOKEN_NOT;
 	if (!strcasecmp(s->buffer, "infty"))
@@ -289,6 +325,10 @@ static enum isl_token_type check_keywords(struct isl_stream *s)
 		return ISL_TOKEN_FLOORD;
 	if (!strcasecmp(s->buffer, "mod"))
 		return ISL_TOKEN_MOD;
+	if (!strcasecmp(s->buffer, "ceil"))
+		return ISL_TOKEN_CEIL;
+	if (!strcasecmp(s->buffer, "floor"))
+		return ISL_TOKEN_FLOOR;
 
 	if (!s->keywords)
 		return ISL_TOKEN_IDENT;

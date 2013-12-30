@@ -15,6 +15,7 @@
 #include <isl/int.h>
 #include <isl/ctx.h>
 #include <isl/blk.h>
+#include <isl/val.h>
 #include <isl/printer.h>
 
 #if defined(__cplusplus)
@@ -42,12 +43,17 @@ isl_ctx *isl_vec_get_ctx(__isl_keep isl_vec *vec);
 
 int isl_vec_size(__isl_keep isl_vec *vec);
 int isl_vec_get_element(__isl_keep isl_vec *vec, int pos, isl_int *v);
+__isl_give isl_val *isl_vec_get_element_val(__isl_keep isl_vec *vec, int pos);
 __isl_give isl_vec *isl_vec_set_element(__isl_take isl_vec *vec,
 	int pos, isl_int v);
 __isl_give isl_vec *isl_vec_set_element_si(__isl_take isl_vec *vec,
 	int pos, int v);
+__isl_give isl_vec *isl_vec_set_element_val(__isl_take isl_vec *vec,
+	int pos, __isl_take isl_val *v);
 
 int isl_vec_is_equal(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2);
+int isl_vec_cmp_element(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2,
+	int pos);
 
 void isl_vec_dump(__isl_keep isl_vec *vec);
 __isl_give isl_printer *isl_printer_print_vec(__isl_take isl_printer *printer,
@@ -58,6 +64,8 @@ struct isl_vec *isl_vec_ceil(struct isl_vec *vec);
 struct isl_vec *isl_vec_normalize(struct isl_vec *vec);
 __isl_give isl_vec *isl_vec_set(__isl_take isl_vec *vec, isl_int v);
 __isl_give isl_vec *isl_vec_set_si(__isl_take isl_vec *vec, int v);
+__isl_give isl_vec *isl_vec_set_val(__isl_take isl_vec *vec,
+	__isl_take isl_val *v);
 __isl_give isl_vec *isl_vec_clr(__isl_take isl_vec *vec);
 __isl_give isl_vec *isl_vec_neg(__isl_take isl_vec *vec);
 __isl_give isl_vec *isl_vec_scale(__isl_take isl_vec *vec, isl_int m);

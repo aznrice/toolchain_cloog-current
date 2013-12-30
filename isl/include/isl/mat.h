@@ -16,6 +16,7 @@
 #include <isl/ctx.h>
 #include <isl/blk.h>
 #include <isl/vec.h>
+#include <isl/val.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -34,15 +35,19 @@ struct isl_mat *isl_mat_extend(struct isl_mat *mat,
 struct isl_mat *isl_mat_identity(struct isl_ctx *ctx, unsigned n_row);
 __isl_give isl_mat *isl_mat_copy(__isl_keep isl_mat *mat);
 struct isl_mat *isl_mat_cow(struct isl_mat *mat);
-void isl_mat_free(__isl_take isl_mat *mat);
+void *isl_mat_free(__isl_take isl_mat *mat);
 
 int isl_mat_rows(__isl_keep isl_mat *mat);
 int isl_mat_cols(__isl_keep isl_mat *mat);
 int isl_mat_get_element(__isl_keep isl_mat *mat, int row, int col, isl_int *v);
+__isl_give isl_val *isl_mat_get_element_val(__isl_keep isl_mat *mat,
+	int row, int col);
 __isl_give isl_mat *isl_mat_set_element(__isl_take isl_mat *mat,
 	int row, int col, isl_int v);
 __isl_give isl_mat *isl_mat_set_element_si(__isl_take isl_mat *mat,
 	int row, int col, int v);
+__isl_give isl_mat *isl_mat_set_element_val(__isl_take isl_mat *mat,
+	int row, int col, __isl_take isl_val *v);
 
 struct isl_mat *isl_mat_swap_cols(struct isl_mat *mat, unsigned i, unsigned j);
 struct isl_mat *isl_mat_swap_rows(struct isl_mat *mat, unsigned i, unsigned j);
@@ -60,7 +65,8 @@ struct isl_mat *isl_mat_left_hermite(struct isl_mat *M,
 struct isl_mat *isl_mat_lin_to_aff(struct isl_mat *mat);
 struct isl_mat *isl_mat_inverse_product(struct isl_mat *left,
 	struct isl_mat *right);
-struct isl_mat *isl_mat_product(struct isl_mat *left, struct isl_mat *right);
+__isl_give isl_mat *isl_mat_product(__isl_take isl_mat *left,
+	__isl_take isl_mat *right);
 struct isl_mat *isl_mat_transpose(struct isl_mat *mat);
 __isl_give isl_mat *isl_mat_right_inverse(__isl_take isl_mat *mat);
 __isl_give isl_mat *isl_mat_right_kernel(__isl_take isl_mat *mat);

@@ -1,7 +1,7 @@
 /*
  * Copyright 2011      INRIA Saclay
  * Copyright 2011      Sven Verdoolaege
- * Copyright 2012      Ecole Normale Superieure
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
@@ -19,11 +19,21 @@
 #include <isl_space_private.h>
 #include <isl_local_space_private.h>
 #include <isl_mat_private.h>
-#include <isl_list_private.h>
 #include <isl/constraint.h>
 #include <isl/seq.h>
 #include <isl/set.h>
+#include <isl_val_private.h>
 #include <isl_config.h>
+
+#undef BASE
+#define BASE aff
+
+#include <isl_list_templ.c>
+
+#undef BASE
+#define BASE pw_aff
+
+#include <isl_list_templ.c>
 
 __isl_give isl_aff *isl_aff_alloc_vec(__isl_take isl_local_space *ls,
 	__isl_take isl_vec *v)
@@ -399,12 +409,40 @@ int isl_aff_get_denominator(__isl_keep isl_aff *aff, isl_int *v)
 	return 0;
 }
 
+/* Return the common denominator of "aff".
+ */
+__isl_give isl_val *isl_aff_get_denominator_val(__isl_keep isl_aff *aff)
+{
+	isl_ctx *ctx;
+
+	if (!aff)
+		return NULL;
+
+	ctx = isl_aff_get_ctx(aff);
+	return isl_val_int_from_isl_int(ctx, aff->v->el[0]);
+}
+
 int isl_aff_get_constant(__isl_keep isl_aff *aff, isl_int *v)
 {
 	if (!aff)
 		return -1;
 	isl_int_set(*v, aff->v->el[1]);
 	return 0;
+}
+
+/* Return the constant term of "aff".
+ */
+__isl_give isl_val *isl_aff_get_constant_val(__isl_keep isl_aff *aff)
+{
+	isl_ctx *ctx;
+	isl_val *v;
+
+	if (!aff)
+		return NULL;
+
+	ctx = isl_aff_get_ctx(aff);
+	v = isl_val_rat_from_isl_int(ctx, aff->v->el[1], aff->v->el[0]);
+	return isl_val_normalize(v);
 }
 
 int isl_aff_get_coefficient(__isl_keep isl_aff *aff,
@@ -428,6 +466,35 @@ int isl_aff_get_coefficient(__isl_keep isl_aff *aff,
 	isl_int_set(*v, aff->v->el[1 + pos]);
 
 	return 0;
+}
+
+/* Return the coefficient of the variable of type "type" at position "pos"
+ * of "aff".
+ */
+__isl_give isl_val *isl_aff_get_coefficient_val(__isl_keep isl_aff *aff,
+	enum isl_dim_type type, int pos)
+{
+	isl_ctx *ctx;
+	isl_val *v;
+
+	if (!aff)
+		return NULL;
+
+	ctx = isl_aff_get_ctx(aff);
+	if (type == isl_dim_out)
+		isl_die(ctx, isl_error_invalid,
+			"output/set dimension does not have a coefficient",
+			return NULL);
+	if (type == isl_dim_in)
+		type = isl_dim_set;
+
+	if (pos >= isl_local_space_dim(aff->ls, type))
+		isl_die(ctx, isl_error_invalid,
+			"position out of bounds", return NULL);
+
+	pos += isl_local_space_offset(aff->ls, type);
+	v = isl_val_rat_from_isl_int(ctx, aff->v->el[1 + pos], aff->v->el[0]);
+	return isl_val_normalize(v);
 }
 
 __isl_give isl_aff *isl_aff_set_denominator(__isl_take isl_aff *aff, isl_int v)
@@ -460,6 +527,53 @@ __isl_give isl_aff *isl_aff_set_constant(__isl_take isl_aff *aff, isl_int v)
 	return aff;
 }
 
+/* Replace the constant term of "aff" by "v".
+ */
+__isl_give isl_aff *isl_aff_set_constant_val(__isl_take isl_aff *aff,
+	__isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational value", goto error);
+
+	if (isl_int_eq(aff->v->el[1], v->n) &&
+	    isl_int_eq(aff->v->el[0], v->d)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	aff = isl_aff_cow(aff);
+	if (!aff)
+		goto error;
+	aff->v = isl_vec_cow(aff->v);
+	if (!aff->v)
+		goto error;
+
+	if (isl_int_eq(aff->v->el[0], v->d)) {
+		isl_int_set(aff->v->el[1], v->n);
+	} else if (isl_int_is_one(v->d)) {
+		isl_int_mul(aff->v->el[1], aff->v->el[0], v->n);
+	} else {
+		isl_seq_scale(aff->v->el + 1,
+				aff->v->el + 1, v->d, aff->v->size - 1);
+		isl_int_mul(aff->v->el[1], aff->v->el[0], v->n);
+		isl_int_mul(aff->v->el[0], aff->v->el[0], v->d);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
+}
+
 __isl_give isl_aff *isl_aff_add_constant(__isl_take isl_aff *aff, isl_int v)
 {
 	if (isl_int_is_zero(v))
@@ -476,6 +590,56 @@ __isl_give isl_aff *isl_aff_add_constant(__isl_take isl_aff *aff, isl_int v)
 	isl_int_addmul(aff->v->el[1], aff->v->el[0], v);
 
 	return aff;
+}
+
+/* Add "v" to the constant term of "aff".
+ */
+__isl_give isl_aff *isl_aff_add_constant_val(__isl_take isl_aff *aff,
+	__isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (isl_val_is_zero(v)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational value", goto error);
+
+	aff = isl_aff_cow(aff);
+	if (!aff)
+		goto error;
+
+	aff->v = isl_vec_cow(aff->v);
+	if (!aff->v)
+		goto error;
+
+	if (isl_int_is_one(v->d)) {
+		isl_int_addmul(aff->v->el[1], aff->v->el[0], v->n);
+	} else if (isl_int_eq(aff->v->el[0], v->d)) {
+		isl_int_add(aff->v->el[1], aff->v->el[1], v->n);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	} else {
+		isl_seq_scale(aff->v->el + 1,
+				aff->v->el + 1, v->d, aff->v->size - 1);
+		isl_int_addmul(aff->v->el[1], aff->v->el[0], v->n);
+		isl_int_mul(aff->v->el[0], aff->v->el[0], v->d);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
 }
 
 __isl_give isl_aff *isl_aff_add_constant_si(__isl_take isl_aff *aff, int v)
@@ -604,6 +768,66 @@ __isl_give isl_aff *isl_aff_set_coefficient_si(__isl_take isl_aff *aff,
 	return aff;
 }
 
+/* Replace the coefficient of the variable of type "type" at position "pos"
+ * of "aff" by "v".
+ */
+__isl_give isl_aff *isl_aff_set_coefficient_val(__isl_take isl_aff *aff,
+	enum isl_dim_type type, int pos, __isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (type == isl_dim_out)
+		isl_die(aff->v->ctx, isl_error_invalid,
+			"output/set dimension does not have a coefficient",
+			goto error);
+	if (type == isl_dim_in)
+		type = isl_dim_set;
+
+	if (pos >= isl_local_space_dim(aff->ls, type))
+		isl_die(aff->v->ctx, isl_error_invalid,
+			"position out of bounds", goto error);
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational value", goto error);
+
+	pos += isl_local_space_offset(aff->ls, type);
+	if (isl_int_eq(aff->v->el[1 + pos], v->n) &&
+	    isl_int_eq(aff->v->el[0], v->d)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	aff = isl_aff_cow(aff);
+	if (!aff)
+		goto error;
+	aff->v = isl_vec_cow(aff->v);
+	if (!aff->v)
+		goto error;
+
+	if (isl_int_eq(aff->v->el[0], v->d)) {
+		isl_int_set(aff->v->el[1 + pos], v->n);
+	} else if (isl_int_is_one(v->d)) {
+		isl_int_mul(aff->v->el[1 + pos], aff->v->el[0], v->n);
+	} else {
+		isl_seq_scale(aff->v->el + 1,
+				aff->v->el + 1, v->d, aff->v->size - 1);
+		isl_int_mul(aff->v->el[1 + pos], aff->v->el[0], v->n);
+		isl_int_mul(aff->v->el[0], aff->v->el[0], v->d);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
+}
+
 __isl_give isl_aff *isl_aff_add_coefficient(__isl_take isl_aff *aff,
 	enum isl_dim_type type, int pos, isl_int v)
 {
@@ -633,6 +857,69 @@ __isl_give isl_aff *isl_aff_add_coefficient(__isl_take isl_aff *aff,
 	isl_int_addmul(aff->v->el[1 + pos], aff->v->el[0], v);
 
 	return aff;
+}
+
+/* Add "v" to the coefficient of the variable of type "type"
+ * at position "pos" of "aff".
+ */
+__isl_give isl_aff *isl_aff_add_coefficient_val(__isl_take isl_aff *aff,
+	enum isl_dim_type type, int pos, __isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (isl_val_is_zero(v)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	if (type == isl_dim_out)
+		isl_die(aff->v->ctx, isl_error_invalid,
+			"output/set dimension does not have a coefficient",
+			goto error);
+	if (type == isl_dim_in)
+		type = isl_dim_set;
+
+	if (pos >= isl_local_space_dim(aff->ls, type))
+		isl_die(aff->v->ctx, isl_error_invalid,
+			"position out of bounds", goto error);
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational value", goto error);
+
+	aff = isl_aff_cow(aff);
+	if (!aff)
+		goto error;
+
+	aff->v = isl_vec_cow(aff->v);
+	if (!aff->v)
+		goto error;
+
+	pos += isl_local_space_offset(aff->ls, type);
+	if (isl_int_is_one(v->d)) {
+		isl_int_addmul(aff->v->el[1 + pos], aff->v->el[0], v->n);
+	} else if (isl_int_eq(aff->v->el[0], v->d)) {
+		isl_int_add(aff->v->el[1 + pos], aff->v->el[1 + pos], v->n);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	} else {
+		isl_seq_scale(aff->v->el + 1,
+				aff->v->el + 1, v->d, aff->v->size - 1);
+		isl_int_addmul(aff->v->el[1 + pos], aff->v->el[0], v->n);
+		isl_int_mul(aff->v->el[0], aff->v->el[0], v->d);
+		aff->v = isl_vec_normalize(aff->v);
+		if (!aff->v)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
 }
 
 __isl_give isl_aff *isl_aff_add_coefficient_si(__isl_take isl_aff *aff,
@@ -1024,6 +1311,37 @@ __isl_give isl_aff *isl_aff_mod(__isl_take isl_aff *aff, isl_int m)
 
 /* Compute
  *
+ *	aff mod m = aff - m * floor(aff/m)
+ *
+ * with m an integer value.
+ */
+__isl_give isl_aff *isl_aff_mod_val(__isl_take isl_aff *aff,
+	__isl_take isl_val *m)
+{
+	isl_aff *res;
+
+	if (!aff || !m)
+		goto error;
+
+	if (!isl_val_is_int(m))
+		isl_die(isl_val_get_ctx(m), isl_error_invalid,
+			"expecting integer modulo", goto error);
+
+	res = isl_aff_copy(aff);
+	aff = isl_aff_scale_down_val(aff, isl_val_copy(m));
+	aff = isl_aff_floor(aff);
+	aff = isl_aff_scale_val(aff, m);
+	res = isl_aff_sub(res, aff);
+
+	return res;
+error:
+	isl_aff_free(aff);
+	isl_val_free(m);
+	return NULL;
+}
+
+/* Compute
+ *
  *	pwaff mod m = pwaff - m * floor(pwaff/m)
  */
 __isl_give isl_pw_aff *isl_pw_aff_mod(__isl_take isl_pw_aff *pwaff, isl_int m)
@@ -1037,6 +1355,29 @@ __isl_give isl_pw_aff *isl_pw_aff_mod(__isl_take isl_pw_aff *pwaff, isl_int m)
 	res = isl_pw_aff_sub(res, pwaff);
 
 	return res;
+}
+
+/* Compute
+ *
+ *	pa mod m = pa - m * floor(pa/m)
+ *
+ * with m an integer value.
+ */
+__isl_give isl_pw_aff *isl_pw_aff_mod_val(__isl_take isl_pw_aff *pa,
+	__isl_take isl_val *m)
+{
+	if (!pa || !m)
+		goto error;
+	if (!isl_val_is_int(m))
+		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
+			"expecting integer modulo", goto error);
+	pa = isl_pw_aff_mod(pa, m->n);
+	isl_val_free(m);
+	return pa;
+error:
+	isl_pw_aff_free(pa);
+	isl_val_free(m);
+	return NULL;
 }
 
 /* Given f, return ceil(f).
@@ -1162,6 +1503,7 @@ __isl_give isl_aff *isl_aff_add(__isl_take isl_aff *aff1,
 	int *exp1 = NULL;
 	int *exp2 = NULL;
 	isl_mat *div;
+	int n_div1, n_div2;
 
 	if (!aff1 || !aff2)
 		goto error;
@@ -1171,12 +1513,14 @@ __isl_give isl_aff *isl_aff_add(__isl_take isl_aff *aff1,
 		isl_die(ctx, isl_error_invalid,
 			"spaces don't match", goto error);
 
-	if (aff1->ls->div->n_row == 0 && aff2->ls->div->n_row == 0)
+	n_div1 = isl_aff_dim(aff1, isl_dim_div);
+	n_div2 = isl_aff_dim(aff2, isl_dim_div);
+	if (n_div1 == 0 && n_div2 == 0)
 		return add_expanded(aff1, aff2);
 
-	exp1 = isl_alloc_array(ctx, int, aff1->ls->div->n_row);
-	exp2 = isl_alloc_array(ctx, int, aff2->ls->div->n_row);
-	if (!exp1 || !exp2)
+	exp1 = isl_alloc_array(ctx, int, n_div1);
+	exp2 = isl_alloc_array(ctx, int, n_div2);
+	if ((n_div1 && !exp1) || (n_div2 && !exp2))
 		goto error;
 
 	div = isl_merge_divs(aff1->ls->div, aff2->ls->div, exp1, exp2);
@@ -1214,6 +1558,11 @@ __isl_give isl_aff *isl_aff_scale(__isl_take isl_aff *aff, isl_int f)
 	if (!aff->v)
 		return isl_aff_free(aff);
 
+	if (isl_int_is_pos(f) && isl_int_is_divisible_by(aff->v->el[0], f)) {
+		isl_int_divexact(aff->v->el[0], aff->v->el[0], f);
+		return aff;
+	}
+
 	isl_int_init(gcd);
 	isl_int_gcd(gcd, aff->v->el[0], f);
 	isl_int_divexact(aff->v->el[0], aff->v->el[0], gcd);
@@ -1222,6 +1571,34 @@ __isl_give isl_aff *isl_aff_scale(__isl_take isl_aff *aff, isl_int f)
 	isl_int_clear(gcd);
 
 	return aff;
+}
+
+/* Multiple "aff" by "v".
+ */
+__isl_give isl_aff *isl_aff_scale_val(__isl_take isl_aff *aff,
+	__isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational factor", goto error);
+
+	aff = isl_aff_scale(aff, v->n);
+	aff = isl_aff_scale_down(aff, v->d);
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
 }
 
 __isl_give isl_aff *isl_aff_scale_down(__isl_take isl_aff *aff, isl_int f)
@@ -1252,6 +1629,37 @@ __isl_give isl_aff *isl_aff_scale_down(__isl_take isl_aff *aff, isl_int f)
 	isl_int_clear(gcd);
 
 	return aff;
+}
+
+/* Divide "aff" by "v".
+ */
+__isl_give isl_aff *isl_aff_scale_down_val(__isl_take isl_aff *aff,
+	__isl_take isl_val *v)
+{
+	if (!aff || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return aff;
+	}
+
+	if (!isl_val_is_rat(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"expecting rational factor", goto error);
+	if (!isl_val_is_pos(v))
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"factor needs to be positive", goto error);
+
+	aff = isl_aff_scale(aff, v->d);
+	aff = isl_aff_scale_down(aff, v->n);
+
+	isl_val_free(v);
+	return aff;
+error:
+	isl_aff_free(aff);
+	isl_val_free(v);
+	return NULL;
 }
 
 __isl_give isl_aff *isl_aff_scale_down_ui(__isl_take isl_aff *aff, unsigned f)
@@ -2231,6 +2639,49 @@ __isl_give isl_pw_aff *isl_pw_aff_scale_down(__isl_take isl_pw_aff *pwaff,
 	return pwaff;
 }
 
+/* Divide "pa" by "f".
+ */
+__isl_give isl_pw_aff *isl_pw_aff_scale_down_val(__isl_take isl_pw_aff *pa,
+	__isl_take isl_val *f)
+{
+	int i;
+
+	if (!pa || !f)
+		goto error;
+
+	if (isl_val_is_one(f)) {
+		isl_val_free(f);
+		return pa;
+	}
+
+	if (!isl_val_is_rat(f))
+		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
+			"expecting rational factor", goto error);
+	if (!isl_val_is_pos(f))
+		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
+			"factor needs to be positive", goto error);
+
+	pa = isl_pw_aff_cow(pa);
+	if (!pa)
+		return NULL;
+	if (pa->n == 0)
+		return pa;
+
+	for (i = 0; i < pa->n; ++i) {
+		pa->p[i].aff = isl_aff_scale_down_val(pa->p[i].aff,
+							isl_val_copy(f));
+		if (!pa->p[i].aff)
+			goto error;
+	}
+
+	isl_val_free(f);
+	return pa;
+error:
+	isl_pw_aff_free(pa);
+	isl_val_free(f);
+	return NULL;
+}
+
 __isl_give isl_pw_aff *isl_pw_aff_floor(__isl_take isl_pw_aff *pwaff)
 {
 	int i;
@@ -2645,6 +3096,41 @@ __isl_give isl_pw_aff_list *isl_pw_aff_list_set_rational(
 	return list;
 }
 
+/* Check that the domain space of "aff" matches "space".
+ *
+ * Return 0 on success and -1 on error.
+ */
+int isl_aff_check_match_domain_space(__isl_keep isl_aff *aff,
+	__isl_keep isl_space *space)
+{
+	isl_space *aff_space;
+	int match;
+
+	if (!aff || !space)
+		return -1;
+
+	aff_space = isl_aff_get_domain_space(aff);
+
+	match = isl_space_match(space, isl_dim_param, aff_space, isl_dim_param);
+	if (match < 0)
+		goto error;
+	if (!match)
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"parameters don't match", goto error);
+	match = isl_space_tuple_match(space, isl_dim_in,
+					aff_space, isl_dim_set);
+	if (match < 0)
+		goto error;
+	if (!match)
+		isl_die(isl_aff_get_ctx(aff), isl_error_invalid,
+			"domains don't match", goto error);
+	isl_space_free(aff_space);
+	return 0;
+error:
+	isl_space_free(aff_space);
+	return -1;
+}
+
 #undef BASE
 #define BASE aff
 
@@ -2672,31 +3158,15 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_identity(
 __isl_give isl_multi_aff *isl_multi_aff_add(__isl_take isl_multi_aff *maff1,
 	__isl_take isl_multi_aff *maff2)
 {
-	int i;
-	isl_ctx *ctx;
+	return isl_multi_aff_bin_op(maff1, maff2, &isl_aff_add);
+}
 
-	maff1 = isl_multi_aff_cow(maff1);
-	if (!maff1 || !maff2)
-		goto error;
-
-	ctx = isl_multi_aff_get_ctx(maff1);
-	if (!isl_space_is_equal(maff1->space, maff2->space))
-		isl_die(ctx, isl_error_invalid,
-			"spaces don't match", goto error);
-
-	for (i = 0; i < maff1->n; ++i) {
-		maff1->p[i] = isl_aff_add(maff1->p[i],
-					    isl_aff_copy(maff2->p[i]));
-		if (!maff1->p[i])
-			goto error;
-	}
-
-	isl_multi_aff_free(maff2);
-	return maff1;
-error:
-	isl_multi_aff_free(maff1);
-	isl_multi_aff_free(maff2);
-	return NULL;
+/* Subtract "ma2" from "ma1" and return the result.
+ */
+__isl_give isl_multi_aff *isl_multi_aff_sub(__isl_take isl_multi_aff *ma1,
+	__isl_take isl_multi_aff *ma2)
+{
+	return isl_multi_aff_bin_op(ma1, ma2, &isl_aff_sub);
 }
 
 /* Given two multi-affine expressions A -> B and C -> D,
@@ -3057,6 +3527,22 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_add(
 						&pw_multi_aff_add);
 }
 
+static __isl_give isl_pw_multi_aff *pw_multi_aff_sub(
+	__isl_take isl_pw_multi_aff *pma1, __isl_take isl_pw_multi_aff *pma2)
+{
+	return isl_pw_multi_aff_on_shared_domain(pma1, pma2,
+						&isl_multi_aff_sub);
+}
+
+/* Subtract "pma2" from "pma1" and return the result.
+ */
+__isl_give isl_pw_multi_aff *isl_pw_multi_aff_sub(
+	__isl_take isl_pw_multi_aff *pma1, __isl_take isl_pw_multi_aff *pma2)
+{
+	return isl_pw_multi_aff_align_params_pw_pw_and(pma1, pma2,
+						&pw_multi_aff_sub);
+}
+
 __isl_give isl_pw_multi_aff *isl_pw_multi_aff_union_add(
 	__isl_take isl_pw_multi_aff *pma1, __isl_take isl_pw_multi_aff *pma2)
 {
@@ -3090,7 +3576,7 @@ static __isl_give isl_pw_multi_aff *pw_multi_aff_product(
 						 isl_set_copy(pma2->p[j].set));
 			ma = isl_multi_aff_product(
 					isl_multi_aff_copy(pma1->p[i].maff),
-					isl_multi_aff_copy(pma2->p[i].maff));
+					isl_multi_aff_copy(pma2->p[j].maff));
 			res = isl_pw_multi_aff_add_piece(res, domain, ma);
 		}
 	}
@@ -3761,6 +4247,51 @@ __isl_give isl_pw_multi_aff *isl_pw_multi_aff_from_set(__isl_take isl_set *set)
 	return isl_pw_multi_aff_from_map(set);
 }
 
+/* Convert "map" into an isl_pw_multi_aff (if possible) and
+ * add it to *user.
+ */
+static int pw_multi_aff_from_map(__isl_take isl_map *map, void *user)
+{
+	isl_union_pw_multi_aff **upma = user;
+	isl_pw_multi_aff *pma;
+
+	pma = isl_pw_multi_aff_from_map(map);
+	*upma = isl_union_pw_multi_aff_add_pw_multi_aff(*upma, pma);
+
+	return *upma ? 0 : -1;
+}
+
+/* Try and create an isl_union_pw_multi_aff that is equivalent
+ * to the given isl_union_map.
+ * The isl_union_map is required to be single-valued in each space.
+ * Otherwise, an error is produced.
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_from_union_map(
+	__isl_take isl_union_map *umap)
+{
+	isl_space *space;
+	isl_union_pw_multi_aff *upma;
+
+	space = isl_union_map_get_space(umap);
+	upma = isl_union_pw_multi_aff_empty(space);
+	if (isl_union_map_foreach_map(umap, &pw_multi_aff_from_map, &upma) < 0)
+		upma = isl_union_pw_multi_aff_free(upma);
+	isl_union_map_free(umap);
+
+	return upma;
+}
+
+/* Try and create an isl_union_pw_multi_aff that is equivalent
+ * to the given isl_union_set.
+ * The isl_union_set is required to be a singleton in each space.
+ * Otherwise, an error is produced.
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_from_union_set(
+	__isl_take isl_union_set *uset)
+{
+	return isl_union_pw_multi_aff_from_union_map(uset);
+}
+
 /* Return the piecewise affine expression "set ? 1 : 0".
  */
 __isl_give isl_pw_aff *isl_set_indicator_function(__isl_take isl_set *set)
@@ -3923,8 +4454,12 @@ error:
 	return NULL;
 }
 
-/* Compute the preimage of the affine expression "src" under "ma"
- * and put the result in "dst".  If "has_denom" is set (to one),
+/* Compute the preimage of a range of dimensions in the affine expression "src"
+ * under "ma" and put the result in "dst".  The number of dimensions in "src"
+ * that precede the range is given by "n_before".  The number of dimensions
+ * in the range is given by the number of output dimensions of "ma".
+ * The number of dimensions that follow the range is given by "n_after".
+ * If "has_denom" is set (to one),
  * then "src" and "dst" have an extra initial denominator.
  * "n_div_ma" is the number of existentials in "ma"
  * "n_div_bset" is the number of existentials in "src"
@@ -3936,17 +4471,18 @@ error:
  *
  * Let src represent the expression
  *
- *	(a(p) + b x + c(divs))/d
+ *	(a(p) + f_u u + b v + f_w w + c(divs))/d
  *
  * and let ma represent the expressions
  *
- *	x_i = (r_i(p) + s_i(y) + t_i(divs'))/m_i
+ *	v_i = (r_i(p) + s_i(y) + t_i(divs'))/m_i
  *
  * We start out with the following expression for dst:
  *
- *	(a(p) + 0 y + 0 divs' + f \sum_i b_i x_i + c(divs))/d
+ *	(a(p) + f_u u + 0 y + f_w w + 0 divs' + c(divs) + f \sum_i b_i v_i)/d
  *
- * with the multiplication factor f initially equal to 1.
+ * with the multiplication factor f initially equal to 1
+ * and f \sum_i b_i v_i kept separately.
  * For each x_i that we substitute, we multiply the numerator
  * (and denominator) of dst by c_1 = m_i and add the numerator
  * of the x_i expression multiplied by c_2 = f b_i,
@@ -3955,40 +4491,63 @@ error:
  * for the next x_j, j > i.
  */
 void isl_seq_preimage(isl_int *dst, isl_int *src,
-	__isl_keep isl_multi_aff *ma, int n_div_ma, int n_div_bset,
+	__isl_keep isl_multi_aff *ma, int n_before, int n_after,
+	int n_div_ma, int n_div_bmap,
 	isl_int f, isl_int c1, isl_int c2, isl_int g, int has_denom)
 {
 	int i;
 	int n_param, n_in, n_out;
-	int o_div_bset;
+	int o_dst, o_src;
 
 	n_param = isl_multi_aff_dim(ma, isl_dim_param);
 	n_in = isl_multi_aff_dim(ma, isl_dim_in);
 	n_out = isl_multi_aff_dim(ma, isl_dim_out);
 
-	o_div_bset = has_denom + 1 + n_param + n_in + n_div_ma;
-
-	isl_seq_cpy(dst, src, has_denom + 1 + n_param);
-	isl_seq_clr(dst + has_denom + 1 + n_param, n_in + n_div_ma);
-	isl_seq_cpy(dst + o_div_bset,
-		    src + has_denom + 1 + n_param + n_out, n_div_bset);
+	isl_seq_cpy(dst, src, has_denom + 1 + n_param + n_before);
+	o_dst = o_src = has_denom + 1 + n_param + n_before;
+	isl_seq_clr(dst + o_dst, n_in);
+	o_dst += n_in;
+	o_src += n_out;
+	isl_seq_cpy(dst + o_dst, src + o_src, n_after);
+	o_dst += n_after;
+	o_src += n_after;
+	isl_seq_clr(dst + o_dst, n_div_ma);
+	o_dst += n_div_ma;
+	isl_seq_cpy(dst + o_dst, src + o_src, n_div_bmap);
 
 	isl_int_set_si(f, 1);
 
 	for (i = 0; i < n_out; ++i) {
-		if (isl_int_is_zero(src[has_denom + 1 + n_param + i]))
+		int offset = has_denom + 1 + n_param + n_before + i;
+
+		if (isl_int_is_zero(src[offset]))
 			continue;
 		isl_int_set(c1, ma->p[i]->v->el[0]);
-		isl_int_mul(c2, f, src[has_denom + 1 + n_param + i]);
+		isl_int_mul(c2, f, src[offset]);
 		isl_int_gcd(g, c1, c2);
 		isl_int_divexact(c1, c1, g);
 		isl_int_divexact(c2, c2, g);
 
 		isl_int_mul(f, f, c1);
-		isl_seq_combine(dst + has_denom, c1, dst + has_denom,
-				c2, ma->p[i]->v->el + 1, ma->p[i]->v->size - 1);
-		isl_seq_scale(dst + o_div_bset,
-				dst + o_div_bset, c1, n_div_bset);
+		o_dst = has_denom;
+		o_src = 1;
+		isl_seq_combine(dst + o_dst, c1, dst + o_dst,
+				c2, ma->p[i]->v->el + o_src, 1 + n_param);
+		o_dst += 1 + n_param;
+		o_src += 1 + n_param;
+		isl_seq_scale(dst + o_dst, dst + o_dst, c1, n_before);
+		o_dst += n_before;
+		isl_seq_combine(dst + o_dst, c1, dst + o_dst,
+				c2, ma->p[i]->v->el + o_src, n_in);
+		o_dst += n_in;
+		o_src += n_in;
+		isl_seq_scale(dst + o_dst, dst + o_dst, c1, n_after);
+		o_dst += n_after;
+		isl_seq_combine(dst + o_dst, c1, dst + o_dst,
+				c2, ma->p[i]->v->el + o_src, n_div_ma);
+		o_dst += n_div_ma;
+		o_src += n_div_ma;
+		isl_seq_scale(dst + o_dst, dst + o_dst, c1, n_div_bmap);
 		if (has_denom)
 			isl_int_mul(dst[0], dst[0], c1);
 	}
@@ -4039,7 +4598,7 @@ __isl_give isl_aff *isl_aff_pullback_multi_aff(__isl_take isl_aff *aff,
 	isl_int_init(c2);
 	isl_int_init(g);
 
-	isl_seq_preimage(res->v->el, aff->v->el, ma, n_div_ma, n_div_aff,
+	isl_seq_preimage(res->v->el, aff->v->el, ma, 0, 0, n_div_ma, n_div_aff,
 			f, c1, c2, g, 1);
 
 	isl_int_clear(f);
@@ -4116,7 +4675,7 @@ __isl_give isl_aff *isl_aff_align_divs(__isl_take isl_aff *dst,
 
 	exp1 = isl_alloc_array(ctx, int, src->ls->div->n_row);
 	exp2 = isl_alloc_array(ctx, int, dst->ls->div->n_row);
-	if (!exp1 || !exp2)
+	if (!exp1 || (dst->ls->div->n_row && !exp2))
 		goto error;
 
 	div = isl_merge_divs(src->ls->div, dst->ls->div, exp1, exp2);
@@ -4591,7 +5150,146 @@ error:
 	return NULL;
 }
 
+/* Check that the domain space of "pa" matches "space".
+ *
+ * Return 0 on success and -1 on error.
+ */
+int isl_pw_aff_check_match_domain_space(__isl_keep isl_pw_aff *pa,
+	__isl_keep isl_space *space)
+{
+	isl_space *pa_space;
+	int match;
+
+	if (!pa || !space)
+		return -1;
+
+	pa_space = isl_pw_aff_get_space(pa);
+
+	match = isl_space_match(space, isl_dim_param, pa_space, isl_dim_param);
+	if (match < 0)
+		goto error;
+	if (!match)
+		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
+			"parameters don't match", goto error);
+	match = isl_space_tuple_match(space, isl_dim_in, pa_space, isl_dim_in);
+	if (match < 0)
+		goto error;
+	if (!match)
+		isl_die(isl_pw_aff_get_ctx(pa), isl_error_invalid,
+			"domains don't match", goto error);
+	isl_space_free(pa_space);
+	return 0;
+error:
+	isl_space_free(pa_space);
+	return -1;
+}
+
 #undef BASE
 #define BASE pw_aff
 
 #include <isl_multi_templ.c>
+
+/* Scale the elements of "pma" by the corresponding elements of "mv".
+ */
+__isl_give isl_pw_multi_aff *isl_pw_multi_aff_scale_multi_val(
+	__isl_take isl_pw_multi_aff *pma, __isl_take isl_multi_val *mv)
+{
+	int i;
+
+	pma = isl_pw_multi_aff_cow(pma);
+	if (!pma || !mv)
+		goto error;
+	if (!isl_space_tuple_match(pma->dim, isl_dim_out,
+					mv->space, isl_dim_set))
+		isl_die(isl_pw_multi_aff_get_ctx(pma), isl_error_invalid,
+			"spaces don't match", goto error);
+	if (!isl_space_match(pma->dim, isl_dim_param,
+					mv->space, isl_dim_param)) {
+		pma = isl_pw_multi_aff_align_params(pma,
+					    isl_multi_val_get_space(mv));
+		mv = isl_multi_val_align_params(mv,
+					    isl_pw_multi_aff_get_space(pma));
+		if (!pma || !mv)
+			goto error;
+	}
+
+	for (i = 0; i < pma->n; ++i) {
+		pma->p[i].maff = isl_multi_aff_scale_multi_val(pma->p[i].maff,
+							isl_multi_val_copy(mv));
+		if (!pma->p[i].maff)
+			goto error;
+	}
+
+	isl_multi_val_free(mv);
+	return pma;
+error:
+	isl_multi_val_free(mv);
+	isl_pw_multi_aff_free(pma);
+	return NULL;
+}
+
+/* Internal data structure for isl_union_pw_multi_aff_scale_multi_val.
+ * mv contains the mv argument.
+ * res collects the results.
+ */
+struct isl_union_pw_multi_aff_scale_multi_val_data {
+	isl_multi_val *mv;
+	isl_union_pw_multi_aff *res;
+};
+
+/* This function is called for each entry of an isl_union_pw_multi_aff.
+ * If the space of the entry matches that of data->mv,
+ * then apply isl_pw_multi_aff_scale_multi_val and add the result
+ * to data->res.
+ */
+static int union_pw_multi_aff_scale_multi_val_entry(void **entry, void *user)
+{
+	struct isl_union_pw_multi_aff_scale_multi_val_data *data = user;
+	isl_pw_multi_aff *pma = *entry;
+
+	if (!pma)
+		return -1;
+	if (!isl_space_tuple_match(pma->dim, isl_dim_out,
+				    data->mv->space, isl_dim_set))
+		return 0;
+
+	pma = isl_pw_multi_aff_copy(pma);
+	pma = isl_pw_multi_aff_scale_multi_val(pma,
+						isl_multi_val_copy(data->mv));
+	data->res = isl_union_pw_multi_aff_add_pw_multi_aff(data->res, pma);
+	if (!data->res)
+		return -1;
+
+	return 0;
+}
+
+/* Scale the elements of "upma" by the corresponding elements of "mv",
+ * for those entries that match the space of "mv".
+ */
+__isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_scale_multi_val(
+	__isl_take isl_union_pw_multi_aff *upma, __isl_take isl_multi_val *mv)
+{
+	struct isl_union_pw_multi_aff_scale_multi_val_data data;
+
+	upma = isl_union_pw_multi_aff_align_params(upma,
+						isl_multi_val_get_space(mv));
+	mv = isl_multi_val_align_params(mv,
+					isl_union_pw_multi_aff_get_space(upma));
+	if (!upma || !mv)
+		goto error;
+
+	data.mv = mv;
+	data.res = isl_union_pw_multi_aff_alloc(isl_space_copy(upma->dim),
+						upma->table.n);
+	if (isl_hash_table_foreach(upma->dim->ctx, &upma->table,
+		       &union_pw_multi_aff_scale_multi_val_entry, &data) < 0)
+		goto error;
+
+	isl_multi_val_free(mv);
+	isl_union_pw_multi_aff_free(upma);
+	return data.res;
+error:
+	isl_multi_val_free(mv);
+	isl_union_pw_multi_aff_free(upma);
+	return NULL;
+}

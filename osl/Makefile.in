@@ -181,9 +181,11 @@ am__installdirs = "$(DESTDIR)$(libdir)" \
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libosl_la_LIBADD =
 am_libosl_la_OBJECTS = libosl_la-scop.lo libosl_la-statement.lo \
-	libosl_la-textual.lo libosl_la-comment.lo \
+	libosl_la-textual.lo libosl_la-comment.lo libosl_la-null.lo \
+	libosl_la-clay.lo libosl_la-dependence.lo \
 	libosl_la-scatnames.lo libosl_la-arrays.lo \
 	libosl_la-coordinates.lo libosl_la-irregular.lo \
+	libosl_la-symbols.lo libosl_la-extbody.lo libosl_la-loop.lo \
 	libosl_la-interface.lo libosl_la-generic.lo \
 	libosl_la-relation.lo libosl_la-relation_list.lo \
 	libosl_la-vector.lo libosl_la-names.lo libosl_la-strings.lo \
@@ -429,10 +431,16 @@ pkgextensionsincludedir = $(pkgincludedir)/extensions
 pkgextensionsinclude_HEADERS = \
 	include/osl/extensions/textual.h \
 	include/osl/extensions/comment.h \
+	include/osl/extensions/null.h \
+	include/osl/extensions/clay.h \
+	include/osl/extensions/dependence.h \
 	include/osl/extensions/scatnames.h \
 	include/osl/extensions/arrays.h \
 	include/osl/extensions/coordinates.h \
-	include/osl/extensions/irregular.h
+	include/osl/extensions/irregular.h  \
+	include/osl/extensions/symbols.h \
+	include/osl/extensions/loop.h  \
+	include/osl/extensions/extbody.h
 
 DEFAULT_INCLUDES = -I.
 INCLUDES = -I$(top_builddir)/include -I$(top_srcdir)/include
@@ -445,10 +453,16 @@ libosl_la_SOURCES = \
 	source/statement.c \
 	source/extensions/textual.c \
 	source/extensions/comment.c \
+	source/extensions/null.c \
+	source/extensions/clay.c \
+	source/extensions/dependence.c \
 	source/extensions/scatnames.c \
 	source/extensions/arrays.c \
 	source/extensions/coordinates.c \
 	source/extensions/irregular.c \
+	source/extensions/symbols.c \
+	source/extensions/extbody.c \
+	source/extensions/loop.c \
 	source/interface.c \
 	source/generic.c \
 	source/relation.c \
@@ -551,19 +565,25 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-arrays.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-body.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-clay.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-comment.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-coordinates.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-dependence.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-extbody.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-generic.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-int.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-interface.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-irregular.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-loop.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-names.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-null.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-relation.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-relation_list.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-scatnames.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-scop.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-statement.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-strings.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-symbols.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-textual.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-util.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libosl_la-vector.Plo@am__quote@
@@ -617,6 +637,27 @@ libosl_la-comment.lo: source/extensions/comment.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-comment.lo `test -f 'source/extensions/comment.c' || echo '$(srcdir)/'`source/extensions/comment.c
 
+libosl_la-null.lo: source/extensions/null.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-null.lo -MD -MP -MF $(DEPDIR)/libosl_la-null.Tpo -c -o libosl_la-null.lo `test -f 'source/extensions/null.c' || echo '$(srcdir)/'`source/extensions/null.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-null.Tpo $(DEPDIR)/libosl_la-null.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/null.c' object='libosl_la-null.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-null.lo `test -f 'source/extensions/null.c' || echo '$(srcdir)/'`source/extensions/null.c
+
+libosl_la-clay.lo: source/extensions/clay.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-clay.lo -MD -MP -MF $(DEPDIR)/libosl_la-clay.Tpo -c -o libosl_la-clay.lo `test -f 'source/extensions/clay.c' || echo '$(srcdir)/'`source/extensions/clay.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-clay.Tpo $(DEPDIR)/libosl_la-clay.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/clay.c' object='libosl_la-clay.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-clay.lo `test -f 'source/extensions/clay.c' || echo '$(srcdir)/'`source/extensions/clay.c
+
+libosl_la-dependence.lo: source/extensions/dependence.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-dependence.lo -MD -MP -MF $(DEPDIR)/libosl_la-dependence.Tpo -c -o libosl_la-dependence.lo `test -f 'source/extensions/dependence.c' || echo '$(srcdir)/'`source/extensions/dependence.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-dependence.Tpo $(DEPDIR)/libosl_la-dependence.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/dependence.c' object='libosl_la-dependence.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-dependence.lo `test -f 'source/extensions/dependence.c' || echo '$(srcdir)/'`source/extensions/dependence.c
+
 libosl_la-scatnames.lo: source/extensions/scatnames.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-scatnames.lo -MD -MP -MF $(DEPDIR)/libosl_la-scatnames.Tpo -c -o libosl_la-scatnames.lo `test -f 'source/extensions/scatnames.c' || echo '$(srcdir)/'`source/extensions/scatnames.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-scatnames.Tpo $(DEPDIR)/libosl_la-scatnames.Plo
@@ -644,6 +685,27 @@ libosl_la-irregular.lo: source/extensions/irregular.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/irregular.c' object='libosl_la-irregular.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-irregular.lo `test -f 'source/extensions/irregular.c' || echo '$(srcdir)/'`source/extensions/irregular.c
+
+libosl_la-symbols.lo: source/extensions/symbols.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-symbols.lo -MD -MP -MF $(DEPDIR)/libosl_la-symbols.Tpo -c -o libosl_la-symbols.lo `test -f 'source/extensions/symbols.c' || echo '$(srcdir)/'`source/extensions/symbols.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-symbols.Tpo $(DEPDIR)/libosl_la-symbols.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/symbols.c' object='libosl_la-symbols.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-symbols.lo `test -f 'source/extensions/symbols.c' || echo '$(srcdir)/'`source/extensions/symbols.c
+
+libosl_la-extbody.lo: source/extensions/extbody.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-extbody.lo -MD -MP -MF $(DEPDIR)/libosl_la-extbody.Tpo -c -o libosl_la-extbody.lo `test -f 'source/extensions/extbody.c' || echo '$(srcdir)/'`source/extensions/extbody.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-extbody.Tpo $(DEPDIR)/libosl_la-extbody.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/extbody.c' object='libosl_la-extbody.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-extbody.lo `test -f 'source/extensions/extbody.c' || echo '$(srcdir)/'`source/extensions/extbody.c
+
+libosl_la-loop.lo: source/extensions/loop.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-loop.lo -MD -MP -MF $(DEPDIR)/libosl_la-loop.Tpo -c -o libosl_la-loop.lo `test -f 'source/extensions/loop.c' || echo '$(srcdir)/'`source/extensions/loop.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libosl_la-loop.Tpo $(DEPDIR)/libosl_la-loop.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='source/extensions/loop.c' object='libosl_la-loop.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libosl_la-loop.lo `test -f 'source/extensions/loop.c' || echo '$(srcdir)/'`source/extensions/loop.c
 
 libosl_la-interface.lo: source/interface.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libosl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libosl_la-interface.lo -MD -MP -MF $(DEPDIR)/libosl_la-interface.Tpo -c -o libosl_la-interface.lo `test -f 'source/interface.c' || echo '$(srcdir)/'`source/interface.c

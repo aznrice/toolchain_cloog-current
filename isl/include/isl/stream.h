@@ -14,6 +14,7 @@
 #include <isl/hash.h>
 #include <isl/aff_type.h>
 #include <isl/obj.h>
+#include <isl/val.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -34,6 +35,8 @@ enum isl_token_type { ISL_TOKEN_ERROR = -1,
 			ISL_TOKEN_CEILD, ISL_TOKEN_FLOORD, ISL_TOKEN_MOD,
 			ISL_TOKEN_STRING,
 			ISL_TOKEN_MAP, ISL_TOKEN_AFF,
+			ISL_TOKEN_CEIL, ISL_TOKEN_FLOOR,
+			ISL_TOKEN_IMPLIES,
 			ISL_TOKEN_LAST };
 
 struct isl_token {
@@ -52,6 +55,9 @@ struct isl_token {
 	} u;
 };
 
+__isl_give isl_val *isl_token_get_val(isl_ctx *ctx, struct isl_token *tok);
+__isl_give char *isl_token_get_str(isl_ctx *ctx, struct isl_token *tok);
+int isl_token_get_type(struct isl_token *tok);
 void isl_token_free(struct isl_token *tok);
 
 struct isl_stream {

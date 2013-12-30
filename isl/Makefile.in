@@ -139,22 +139,23 @@ am__libisl_la_SOURCES_DIST = isl_lp_no_piplib.c isl_map_no_piplib.c \
 	isl_equalities.h isl_factorization.c isl_factorization.h \
 	isl_farkas.c isl_flow.c isl_fold.c isl_gmp.c isl_hash.c \
 	isl_hmap_map_basic_set.c isl_hmap_map_basic_set.h isl_ilp.c \
-	isl_input.c isl_list.c isl_list_private.h \
-	isl_local_space_private.h isl_local_space.c isl_lp.c \
-	isl_lp_piplib.h isl_map.c isl_map_simplify.c \
-	isl_map_subtract.c isl_map_private.h isl_map_piplib.h \
-	isl_mat.c isl_mat_private.h isl_morph.c isl_morph.h isl_id.c \
-	isl_id_private.h isl_obj.c isl_options.c isl_options_private.h \
-	isl_output.c isl_piplib.h isl_point_private.h isl_point.c \
-	isl_polynomial_private.h isl_polynomial.c \
-	isl_printer_private.h isl_printer.c print.c isl_range.c \
-	isl_range.h isl_reordering.c isl_reordering.h isl_sample.h \
-	isl_sample.c isl_scan.c isl_scan.h isl_schedule.c \
-	isl_schedule_private.h isl_sort.c isl_sort.h isl_space.c \
-	isl_space_private.h isl_stream.c isl_stream_private.h \
-	isl_seq.c isl_tab.c isl_tab.h isl_tab_pip.c isl_tarjan.c \
-	isl_tarjan.h isl_transitive_closure.c isl_union_map.c \
-	isl_union_map_private.h isl_vec.c isl_version.c \
+	isl_input.c isl_int.h isl_local_space_private.h \
+	isl_local_space.c isl_lp.c isl_lp_piplib.h isl_map.c \
+	isl_map_simplify.c isl_map_subtract.c isl_map_private.h \
+	isl_map_piplib.h isl_mat.c isl_mat_private.h isl_morph.c \
+	isl_morph.h isl_id.c isl_id_private.h isl_obj.c isl_options.c \
+	isl_options_private.h isl_output.c isl_piplib.h \
+	isl_point_private.h isl_point.c isl_polynomial_private.h \
+	isl_polynomial.c isl_printer_private.h isl_printer.c print.c \
+	isl_range.c isl_range.h isl_reordering.c isl_reordering.h \
+	isl_sample.h isl_sample.c isl_scan.c isl_scan.h isl_schedule.c \
+	isl_schedule_private.h isl_set_list.c isl_sort.c isl_sort.h \
+	isl_space.c isl_space_private.h isl_stream.c \
+	isl_stream_private.h isl_seq.c isl_tab.c isl_tab.h \
+	isl_tab_pip.c isl_tarjan.c isl_tarjan.h \
+	isl_transitive_closure.c isl_union_map.c \
+	isl_union_map_private.h isl_val.c isl_val_gmp.c \
+	isl_val_private.h isl_vec.c isl_version.c \
 	isl_vertices_private.h isl_vertices.c
 @HAVE_PIPLIB_FALSE@am__objects_1 = libisl_la-isl_lp_no_piplib.lo \
 @HAVE_PIPLIB_FALSE@	libisl_la-isl_map_no_piplib.lo \
@@ -180,21 +181,22 @@ am_libisl_la_OBJECTS = $(am__objects_1) $(am__objects_2) \
 	libisl_la-isl_fold.lo libisl_la-isl_gmp.lo \
 	libisl_la-isl_hash.lo libisl_la-isl_hmap_map_basic_set.lo \
 	libisl_la-isl_ilp.lo libisl_la-isl_input.lo \
-	libisl_la-isl_list.lo libisl_la-isl_local_space.lo \
-	libisl_la-isl_lp.lo libisl_la-isl_map.lo \
-	libisl_la-isl_map_simplify.lo libisl_la-isl_map_subtract.lo \
-	libisl_la-isl_mat.lo libisl_la-isl_morph.lo \
-	libisl_la-isl_id.lo libisl_la-isl_obj.lo \
-	libisl_la-isl_options.lo libisl_la-isl_output.lo \
-	libisl_la-isl_point.lo libisl_la-isl_polynomial.lo \
-	libisl_la-isl_printer.lo libisl_la-print.lo \
-	libisl_la-isl_range.lo libisl_la-isl_reordering.lo \
-	libisl_la-isl_sample.lo libisl_la-isl_scan.lo \
-	libisl_la-isl_schedule.lo libisl_la-isl_sort.lo \
+	libisl_la-isl_local_space.lo libisl_la-isl_lp.lo \
+	libisl_la-isl_map.lo libisl_la-isl_map_simplify.lo \
+	libisl_la-isl_map_subtract.lo libisl_la-isl_mat.lo \
+	libisl_la-isl_morph.lo libisl_la-isl_id.lo \
+	libisl_la-isl_obj.lo libisl_la-isl_options.lo \
+	libisl_la-isl_output.lo libisl_la-isl_point.lo \
+	libisl_la-isl_polynomial.lo libisl_la-isl_printer.lo \
+	libisl_la-print.lo libisl_la-isl_range.lo \
+	libisl_la-isl_reordering.lo libisl_la-isl_sample.lo \
+	libisl_la-isl_scan.lo libisl_la-isl_schedule.lo \
+	libisl_la-isl_set_list.lo libisl_la-isl_sort.lo \
 	libisl_la-isl_space.lo libisl_la-isl_stream.lo \
 	libisl_la-isl_seq.lo libisl_la-isl_tab.lo \
 	libisl_la-isl_tab_pip.lo libisl_la-isl_tarjan.lo \
 	libisl_la-isl_transitive_closure.lo libisl_la-isl_union_map.lo \
+	libisl_la-isl_val.lo libisl_la-isl_val_gmp.lo \
 	libisl_la-isl_vec.lo libisl_la-isl_version.lo \
 	libisl_la-isl_vertices.lo
 libisl_la_OBJECTS = $(am_libisl_la_OBJECTS)
@@ -570,8 +572,7 @@ libisl_la_SOURCES = \
 	isl_hmap_map_basic_set.h \
 	isl_ilp.c \
 	isl_input.c \
-	isl_list.c \
-	isl_list_private.h \
+	isl_int.h \
 	isl_local_space_private.h \
 	isl_local_space.c \
 	isl_lp.c \
@@ -609,6 +610,7 @@ libisl_la_SOURCES = \
 	isl_scan.h \
 	isl_schedule.c \
 	isl_schedule_private.h \
+	isl_set_list.c \
 	isl_sort.c \
 	isl_sort.h \
 	isl_space.c \
@@ -624,6 +626,9 @@ libisl_la_SOURCES = \
 	isl_transitive_closure.c \
 	isl_union_map.c \
 	isl_union_map_private.h \
+	isl_val.c \
+	isl_val_gmp.c \
+	isl_val_private.h \
 	isl_vec.c \
 	isl_version.c \
 	isl_vertices_private.h \
@@ -739,6 +744,9 @@ pkginclude_HEADERS = \
 	include/isl/union_map_type.h \
 	include/isl/union_set.h \
 	include/isl/union_set_type.h \
+	include/isl/val.h \
+	include/isl/val_gmp.h \
+	include/isl/val_int.h \
 	include/isl/vec.h \
 	include/isl/version.h \
 	include/isl/vertices.h
@@ -765,6 +773,8 @@ EXTRA_DIST = \
 	doc/mypod2latex \
 	doc/manual.tex \
 	doc/user.pod \
+	interface/all.h \
+	interface/isl.py.top \
 	test_inputs
 
 pkgconfigdir = $(pkgconfig_libdir)
@@ -958,7 +968,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_id.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_ilp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_input.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_list.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_local_space.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_lp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_lp_no_piplib.Plo@am__quote@
@@ -985,6 +994,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_scan.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_schedule.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_seq.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_set_list.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_sort.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_space.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_stream.Plo@am__quote@
@@ -993,6 +1003,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_tarjan.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_transitive_closure.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_union_map.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_val.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_val_gmp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_vec.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_version.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libisl_la-isl_vertices.Plo@am__quote@
@@ -1286,13 +1298,6 @@ libisl_la-isl_input.lo: isl_input.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_input.lo `test -f 'isl_input.c' || echo '$(srcdir)/'`isl_input.c
 
-libisl_la-isl_list.lo: isl_list.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_list.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_list.Tpo -c -o libisl_la-isl_list.lo `test -f 'isl_list.c' || echo '$(srcdir)/'`isl_list.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_list.Tpo $(DEPDIR)/libisl_la-isl_list.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='isl_list.c' object='libisl_la-isl_list.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_list.lo `test -f 'isl_list.c' || echo '$(srcdir)/'`isl_list.c
-
 libisl_la-isl_local_space.lo: isl_local_space.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_local_space.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_local_space.Tpo -c -o libisl_la-isl_local_space.lo `test -f 'isl_local_space.c' || echo '$(srcdir)/'`isl_local_space.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_local_space.Tpo $(DEPDIR)/libisl_la-isl_local_space.Plo
@@ -1433,6 +1438,13 @@ libisl_la-isl_schedule.lo: isl_schedule.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_schedule.lo `test -f 'isl_schedule.c' || echo '$(srcdir)/'`isl_schedule.c
 
+libisl_la-isl_set_list.lo: isl_set_list.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_set_list.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_set_list.Tpo -c -o libisl_la-isl_set_list.lo `test -f 'isl_set_list.c' || echo '$(srcdir)/'`isl_set_list.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_set_list.Tpo $(DEPDIR)/libisl_la-isl_set_list.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='isl_set_list.c' object='libisl_la-isl_set_list.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_set_list.lo `test -f 'isl_set_list.c' || echo '$(srcdir)/'`isl_set_list.c
+
 libisl_la-isl_sort.lo: isl_sort.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_sort.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_sort.Tpo -c -o libisl_la-isl_sort.lo `test -f 'isl_sort.c' || echo '$(srcdir)/'`isl_sort.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_sort.Tpo $(DEPDIR)/libisl_la-isl_sort.Plo
@@ -1495,6 +1507,20 @@ libisl_la-isl_union_map.lo: isl_union_map.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='isl_union_map.c' object='libisl_la-isl_union_map.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_union_map.lo `test -f 'isl_union_map.c' || echo '$(srcdir)/'`isl_union_map.c
+
+libisl_la-isl_val.lo: isl_val.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_val.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_val.Tpo -c -o libisl_la-isl_val.lo `test -f 'isl_val.c' || echo '$(srcdir)/'`isl_val.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_val.Tpo $(DEPDIR)/libisl_la-isl_val.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='isl_val.c' object='libisl_la-isl_val.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_val.lo `test -f 'isl_val.c' || echo '$(srcdir)/'`isl_val.c
+
+libisl_la-isl_val_gmp.lo: isl_val_gmp.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_val_gmp.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_val_gmp.Tpo -c -o libisl_la-isl_val_gmp.lo `test -f 'isl_val_gmp.c' || echo '$(srcdir)/'`isl_val_gmp.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libisl_la-isl_val_gmp.Tpo $(DEPDIR)/libisl_la-isl_val_gmp.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='isl_val_gmp.c' object='libisl_la-isl_val_gmp.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libisl_la-isl_val_gmp.lo `test -f 'isl_val_gmp.c' || echo '$(srcdir)/'`isl_val_gmp.c
 
 libisl_la-isl_vec.lo: isl_vec.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libisl_la_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libisl_la-isl_vec.lo -MD -MP -MF $(DEPDIR)/libisl_la-isl_vec.Tpo -c -o libisl_la-isl_vec.lo `test -f 'isl_vec.c' || echo '$(srcdir)/'`isl_vec.c

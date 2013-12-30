@@ -93,12 +93,17 @@ typedef struct osl_generic * osl_generic_p;
 void          osl_generic_idump(FILE *, osl_generic_p, int);
 void          osl_generic_dump(FILE *, osl_generic_p);
 void          osl_generic_print(FILE *, osl_generic_p);
+char*         osl_generic_sprint(osl_generic_p);
+
+// SCoPLib Compatibility
+void          osl_generic_print_options_scoplib(FILE *, osl_generic_p);
 
 
 /*****************************************************************************
  *                               Reading function                            *
  *****************************************************************************/
-osl_generic_p osl_generic_sread(char *, osl_interface_p);
+osl_generic_p osl_generic_sread(char **, osl_interface_p);
+osl_generic_p osl_generic_sread_one(char **, osl_interface_p);
 osl_generic_p osl_generic_read_one(FILE *, osl_interface_p);
 osl_generic_p osl_generic_read(FILE *, osl_interface_p);
 
@@ -107,6 +112,8 @@ osl_generic_p osl_generic_read(FILE *, osl_interface_p);
  *                    Memory allocation/deallocation function                *
  *****************************************************************************/
 void          osl_generic_add(osl_generic_p*, osl_generic_p);
+void          osl_generic_remove_node(osl_generic_p*, osl_generic_p);
+void          osl_generic_remove(osl_generic_p*, char *);
 osl_generic_p osl_generic_malloc();
 void          osl_generic_free(osl_generic_p);
 
@@ -114,6 +121,7 @@ void          osl_generic_free(osl_generic_p);
 /*+***************************************************************************
  *                            Processing functions                           *
  *****************************************************************************/
+int           osl_generic_number(osl_generic_p);
 osl_generic_p osl_generic_clone(osl_generic_p);
 int           osl_generic_equal(osl_generic_p, osl_generic_p);
 int           osl_generic_has_URI(osl_generic_p, char *);

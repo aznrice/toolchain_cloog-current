@@ -1,16 +1,22 @@
 /*
  * Copyright 2011      INRIA Saclay
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
  * Written by Sven Verdoolaege, INRIA Saclay - Ile-de-France,
  * Parc Club Orsay Universite, ZAC des vignes, 4 rue Jacques Monod,
  * 91893 Orsay, France
+ * and Ecole Normale Superieure, 45 rue d'Ulm, 75230 Paris, France
  */
 
 #include <isl_band_private.h>
 #include <isl_schedule_private.h>
-#include <isl_list_private.h>
+
+#undef BASE
+#define BASE band
+
+#include <isl_list_templ.c>
 
 isl_ctx *isl_band_get_ctx(__isl_keep isl_band *band)
 {
@@ -50,7 +56,7 @@ __isl_give isl_band *isl_band_dup(__isl_keep isl_band *band)
 
 	dup->n = band->n;
 	dup->zero = isl_alloc_array(ctx, int, band->n);
-	if (!dup->zero)
+	if (band->n && !dup->zero)
 		goto error;
 
 	for (i = 0; i < band->n; ++i)
@@ -331,7 +337,7 @@ int isl_band_list_foreach_band(__isl_keep isl_band_list *list,
  * res collects the result for all statements
  */
 struct isl_band_tile_data {
-	isl_vec *sizes;
+	isl_multi_val *sizes;
 	isl_union_pw_multi_aff *res;
 	isl_pw_multi_aff *tiled;
 	int scale;
@@ -359,27 +365,24 @@ static int multi_aff_tile(__isl_take isl_set *set,
 	struct isl_band_tile_data *data = user;
 	isl_pw_multi_aff *pma;
 	int i, n;
-	isl_int v;
+	isl_val *v;
 
 	n = isl_multi_aff_dim(ma, isl_dim_out);
-	if (isl_vec_size(data->sizes) < n)
-		n = isl_vec_size(data->sizes);
 
-	isl_int_init(v);
 	for (i = 0; i < n; ++i) {
 		isl_aff *aff;
 
 		aff = isl_multi_aff_get_aff(ma, i);
-		isl_vec_get_element(data->sizes, i, &v);
+		v = isl_multi_val_get_val(data->sizes, i);
 
-		aff = isl_aff_scale_down(aff, v);
+		aff = isl_aff_scale_down_val(aff, isl_val_copy(v));
 		aff = isl_aff_floor(aff);
 		if (data->scale)
-			aff = isl_aff_scale(aff, v);
+			aff = isl_aff_scale_val(aff, isl_val_copy(v));
+		isl_val_free(v);
 
 		ma = isl_multi_aff_set_aff(ma, i, aff);
 	}
-	isl_int_clear(v);
 
 	pma = isl_pw_multi_aff_alloc(set, ma);
 	data->tiled = isl_pw_multi_aff_union_add(data->tiled, pma);
@@ -416,13 +419,14 @@ error:
  * and return the result.
  */
 static isl_union_pw_multi_aff *isl_union_pw_multi_aff_tile(
-	__isl_take isl_union_pw_multi_aff *sched, __isl_keep isl_vec *sizes)
+	__isl_take isl_union_pw_multi_aff *sched,
+	__isl_keep isl_multi_val *sizes)
 {
 	isl_ctx *ctx;
 	isl_space *space;
 	struct isl_band_tile_data data = { sizes };
 
-	ctx = isl_vec_get_ctx(sizes);
+	ctx = isl_multi_val_get_ctx(sizes);
 
 	space = isl_union_pw_multi_aff_get_space(sched);
 	data.res = isl_union_pw_multi_aff_empty(space);
@@ -440,18 +444,101 @@ error:
 	return NULL;
 }
 
+/* Extract the range space from "pma" and store it in *user.
+ * All entries are expected to have the same range space, so we can
+ * stop after extracting the range space from the first entry.
+ */
+static int extract_range_space(__isl_take isl_pw_multi_aff *pma, void *user)
+{
+	isl_space **space = user;
+
+	*space = isl_space_range(isl_pw_multi_aff_get_space(pma));
+	isl_pw_multi_aff_free(pma);
+
+	return -1;
+}
+
+/* Extract the range space of "band".  All entries in band->pma should
+ * have the same range space.  Furthermore, band->pma should have at least
+ * one entry.
+ */
+static __isl_give isl_space *band_get_range_space(__isl_keep isl_band *band)
+{
+	isl_space *space;
+
+	if (!band)
+		return NULL;
+
+	space = NULL;
+	isl_union_pw_multi_aff_foreach_pw_multi_aff(band->pma,
+						&extract_range_space, &space);
+
+	return space;
+}
+
+/* Construct and return an isl_multi_val in the given space, with as entries
+ * the first elements of "v", padded with ones if the size of "v" is smaller
+ * than the dimension of "space".
+ */
+static __isl_give isl_multi_val *multi_val_from_vec(__isl_take isl_space *space,
+	__isl_take isl_vec *v)
+{
+	isl_ctx *ctx;
+	isl_multi_val *mv;
+	int i, n, size;
+
+	if (!space || !v)
+		goto error;
+
+	ctx = isl_space_get_ctx(space);
+	mv = isl_multi_val_zero(space);
+	n = isl_multi_val_dim(mv, isl_dim_set);
+	size = isl_vec_size(v);
+	if (n < size)
+		size = n;
+
+	for (i = 0; i < size; ++i) {
+		isl_val *val = isl_vec_get_element_val(v, i);
+		mv = isl_multi_val_set_val(mv, i, val);
+	}
+	for (i = size; i < n; ++i)
+		mv = isl_multi_val_set_val(mv, i, isl_val_one(ctx));
+
+	isl_vec_free(v);
+	return mv;
+error:
+	isl_space_free(space);
+	isl_vec_free(v);
+	return NULL;
+}
+
 /* Tile the given band using the specified tile sizes.
  * The given band is modified to refer to the tile loops and
  * a child band is created to refer to the point loops.
  * The children of this point loop band are the children
  * of the original band.
+ *
+ * If the scale tile loops option is set, then the tile loops
+ * are scaled by the tile sizes.  If the shift point loops option is set,
+ * then the point loops are shifted to start at zero.
+ * In particular, these options affect the tile and point loop schedules
+ * as follows
+ *
+ *	scale	shift	original	tile		point
+ *
+ *	0	0	i		floor(i/s)	i
+ *	1	0	i		s * floor(i/s)	i
+ *	0	1	i		floor(i/s)	i - s * floor(i/s)
+ *	1	1	i		s * floor(i/s)	i - s * floor(i/s)
  */
 int isl_band_tile(__isl_keep isl_band *band, __isl_take isl_vec *sizes)
 {
 	isl_ctx *ctx;
 	isl_band *child;
 	isl_band_list *list = NULL;
-	isl_union_pw_multi_aff *sched;
+	isl_union_pw_multi_aff *sched = NULL, *child_sched = NULL;
+	isl_space *space;
+	isl_multi_val *mv_sizes;
 
 	if (!band || !sizes)
 		goto error;
@@ -463,22 +550,153 @@ int isl_band_tile(__isl_keep isl_band *band, __isl_take isl_vec *sizes)
 	if (!list)
 		goto error;
 
+	space = band_get_range_space(band);
+	mv_sizes = multi_val_from_vec(space, isl_vec_copy(sizes));
 	sched = isl_union_pw_multi_aff_copy(band->pma);
-	sched = isl_union_pw_multi_aff_tile(sched, sizes);
-	if (!sched)
+	sched = isl_union_pw_multi_aff_tile(sched, mv_sizes);
+
+	child_sched = isl_union_pw_multi_aff_copy(child->pma);
+	if (isl_options_get_tile_shift_point_loops(ctx)) {
+		isl_union_pw_multi_aff *scaled;
+		scaled = isl_union_pw_multi_aff_copy(sched);
+		if (!isl_options_get_tile_scale_tile_loops(ctx))
+			scaled = isl_union_pw_multi_aff_scale_multi_val(scaled,
+						isl_multi_val_copy(mv_sizes));
+		child_sched = isl_union_pw_multi_aff_sub(child_sched, scaled);
+	}
+	isl_multi_val_free(mv_sizes);
+	if (!sched || !child_sched)
 		goto error;
 
 	child->children = band->children;
 	band->children = list;
+	child->parent = band;
 	isl_union_pw_multi_aff_free(band->pma);
 	band->pma = sched;
+	isl_union_pw_multi_aff_free(child->pma);
+	child->pma = child_sched;
 
 	isl_vec_free(sizes);
 	return 0;
 error:
+	isl_union_pw_multi_aff_free(sched);
+	isl_union_pw_multi_aff_free(child_sched);
 	isl_band_list_free(list);
 	isl_vec_free(sizes);
 	return -1;
+}
+
+/* Internal data structure used inside isl_union_pw_multi_aff_drop.
+ *
+ * "pos" is the position of the first dimension to drop.
+ * "n" is the number of dimensions to drop.
+ * "res" accumulates the result.
+ */
+struct isl_union_pw_multi_aff_drop_data {
+	int pos;
+	int n;
+	isl_union_pw_multi_aff *res;
+};
+
+/* Drop the data->n output dimensions starting at data->pos from "pma"
+ * and add the result to data->res.
+ */
+static int pw_multi_aff_drop(__isl_take isl_pw_multi_aff *pma, void *user)
+{
+	struct isl_union_pw_multi_aff_drop_data *data = user;
+
+	pma = isl_pw_multi_aff_drop_dims(pma, isl_dim_out, data->pos, data->n);
+
+	data->res = isl_union_pw_multi_aff_add_pw_multi_aff(data->res, pma);
+	if (!data->res)
+		return -1;
+
+	return 0;
+}
+
+/* Drop the "n" output dimensions starting at "pos" from "sched".
+ */
+static isl_union_pw_multi_aff *isl_union_pw_multi_aff_drop(
+	__isl_take isl_union_pw_multi_aff *sched, int pos, int n)
+{
+	isl_space *space;
+	struct isl_union_pw_multi_aff_drop_data data = { pos, n };
+
+	space = isl_union_pw_multi_aff_get_space(sched);
+	data.res = isl_union_pw_multi_aff_empty(space);
+
+	if (isl_union_pw_multi_aff_foreach_pw_multi_aff(sched,
+						&pw_multi_aff_drop, &data) < 0)
+		data.res = isl_union_pw_multi_aff_free(data.res);
+
+	isl_union_pw_multi_aff_free(sched);
+	return data.res;
+}
+
+/* Drop the "n" dimensions starting at "pos" from "band".
+ */
+static int isl_band_drop(__isl_keep isl_band *band, int pos, int n)
+{
+	int i;
+	isl_union_pw_multi_aff *sched;
+
+	if (!band)
+		return -1;
+	if (n == 0)
+		return 0;
+
+	sched = isl_union_pw_multi_aff_copy(band->pma);
+	sched = isl_union_pw_multi_aff_drop(sched, pos, n);
+	if (!sched)
+		return -1;
+
+	isl_union_pw_multi_aff_free(band->pma);
+	band->pma = sched;
+
+	for (i = pos + n; i < band->n; ++i)
+		band->zero[i - n] = band->zero[i];
+
+	band->n -= n;
+
+	return 0;
+}
+
+/* Split the given band into two nested bands, one with the first "pos"
+ * dimensions of "band" and one with the remaining band->n - pos dimensions.
+ */
+int isl_band_split(__isl_keep isl_band *band, int pos)
+{
+	isl_ctx *ctx;
+	isl_band *child;
+	isl_band_list *list;
+
+	if (!band)
+		return -1;
+
+	ctx = isl_band_get_ctx(band);
+
+	if (pos < 0 || pos > band->n)
+		isl_die(ctx, isl_error_invalid, "position out of bounds",
+			return -1);
+
+	child = isl_band_dup(band);
+	if (isl_band_drop(child, 0, pos) < 0)
+		child = isl_band_free(child);
+	list = isl_band_list_alloc(ctx, 1);
+	list = isl_band_list_add(list, child);
+	if (!list)
+		return -1;
+
+	if (isl_band_drop(band, pos, band->n - pos) < 0) {
+		isl_band_list_free(list);
+		return -1;
+	}
+
+	child->children = band->children;
+	band->children = list;
+	child->parent = band;
+
+	return 0;
 }
 
 __isl_give isl_printer *isl_printer_print_band(__isl_take isl_printer *p,

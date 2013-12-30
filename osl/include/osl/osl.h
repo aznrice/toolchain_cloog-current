@@ -67,12 +67,16 @@
 /* List of reserved OpenScop URIs:
  * - arrays
  * - body
+ * - clay
  * - comment
+ * - coordinates
+ * - dependence
+ * - extbody
  * - generic
  * - int
  * - interface
  * - irregular
- * - coordinates
+ * - null
  * - openscop
  * - relation
  * - relation_list
@@ -80,6 +84,7 @@
  * - scop
  * - statement
  * - strings
+ * - symbols
  * - textual
  * - vector
  */
@@ -96,10 +101,15 @@
 
 # include <osl/extensions/textual.h>
 # include <osl/extensions/comment.h>
+# include <osl/extensions/null.h>
+# include <osl/extensions/clay.h>
 # include <osl/extensions/scatnames.h>
 # include <osl/extensions/arrays.h>
 # include <osl/extensions/coordinates.h>
 # include <osl/extensions/irregular.h>
+# include <osl/extensions/symbols.h>
+# include <osl/extensions/dependence.h>
+# include <osl/extensions/extbody.h>
 
 # include <osl/generic.h>
 # include <osl/statement.h>

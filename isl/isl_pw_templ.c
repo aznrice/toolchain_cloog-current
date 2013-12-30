@@ -1,4 +1,5 @@
 #include <isl/aff.h>
+#include <isl_val_private.h>
 
 #define xFN(TYPE,NAME) TYPE ## _ ## NAME
 #define FN(TYPE,NAME) xFN(TYPE,NAME)
@@ -695,6 +696,37 @@ __isl_give isl_set *FN(PW,domain)(__isl_take PW *pw)
 	return dom;
 }
 
+/* Exploit the equalities in the domain of piece "i" of "pw"
+ * to simplify the associated function.
+ * If the domain of piece "i" is empty, then remove it entirely,
+ * replacing it with the final piece.
+ */
+static int FN(PW,exploit_equalities_and_remove_if_empty)(__isl_keep PW *pw,
+	int i)
+{
+	isl_basic_set *aff;
+	int empty = isl_set_plain_is_empty(pw->p[i].set);
+
+	if (empty < 0)
+		return -1;
+	if (empty) {
+		isl_set_free(pw->p[i].set);
+		FN(EL,free)(pw->p[i].FIELD);
+		if (i != pw->n - 1)
+			pw->p[i] = pw->p[pw->n - 1];
+		pw->n--;
+
+		return 0;
+	}
+
+	aff = isl_set_affine_hull(isl_set_copy(pw->p[i].set));
+	pw->p[i].FIELD = FN(EL,substitute_equalities)(pw->p[i].FIELD, aff);
+	if (!pw->p[i].FIELD)
+		return -1;
+
+	return 0;
+}
+
 /* Restrict the domain of "pw" by combining each cell
  * with "set" through a call to "fn", where "fn" may be
  * isl_set_intersect or isl_set_intersect_params.
@@ -719,22 +751,9 @@ static __isl_give PW *FN(PW,intersect_aligned)(__isl_take PW *pw,
 		goto error;
 
 	for (i = pw->n - 1; i >= 0; --i) {
-		isl_basic_set *aff;
 		pw->p[i].set = fn(pw->p[i].set, isl_set_copy(set));
-		if (!pw->p[i].set)
+		if (FN(PW,exploit_equalities_and_remove_if_empty)(pw, i) < 0)
 			goto error;
-		aff = isl_set_affine_hull(isl_set_copy(pw->p[i].set));
-		pw->p[i].FIELD = FN(EL,substitute_equalities)(pw->p[i].FIELD,
-								aff);
-		if (!pw->p[i].FIELD)
-			goto error;
-		if (isl_set_plain_is_empty(pw->p[i].set)) {
-			isl_set_free(pw->p[i].set);
-			FN(EL,free)(pw->p[i].FIELD);
-			if (i != pw->n - 1)
-				pw->p[i] = pw->p[pw->n - 1];
-			pw->n--;
-		}
 	}
 	
 	isl_set_free(set);
@@ -983,11 +1002,13 @@ __isl_give PW *FN(PW,drop_dims)(__isl_take PW *pw,
 	if (!pw->dim)
 		goto error;
 	for (i = 0; i < pw->n; ++i) {
-		pw->p[i].set = isl_set_drop(pw->p[i].set, set_type, first, n);
-		if (!pw->p[i].set)
-			goto error;
 		pw->p[i].FIELD = FN(EL,drop_dims)(pw->p[i].FIELD, type, first, n);
 		if (!pw->p[i].FIELD)
+			goto error;
+		if (type == isl_dim_out)
+			continue;
+		pw->p[i].set = isl_set_drop(pw->p[i].set, set_type, first, n);
+		if (!pw->p[i].set)
 			goto error;
 	}
 
@@ -1109,14 +1130,32 @@ __isl_give PW *FN(PW,fix_dim)(__isl_take PW *pw,
 		return NULL;
 	for (i = 0; i < pw->n; ++i) {
 		pw->p[i].set = isl_set_fix(pw->p[i].set, type, pos, v);
-		if (!pw->p[i].set)
-			goto error;
+		if (FN(PW,exploit_equalities_and_remove_if_empty)(pw, i) < 0)
+			return FN(PW,free)(pw);
 	}
 
 	return pw;
+}
+
+/* Fix the value of the variable at position "pos" of type "type" of "pw"
+ * to be equal to "v".
+ */
+__isl_give PW *FN(PW,fix_val)(__isl_take PW *pw,
+	enum isl_dim_type type, unsigned pos, __isl_take isl_val *v)
+{
+	if (!v)
+		return FN(PW,free)(pw);
+	if (!isl_val_is_int(v))
+		isl_die(FN(PW,get_ctx)(pw), isl_error_invalid,
+			"expecting integer value", goto error);
+
+	pw = FN(PW,fix_dim)(pw, type, pos, v->n);
+	isl_val_free(v);
+
+	return pw;
 error:
-	FN(PW,free)(pw);
-	return NULL;
+	isl_val_free(v);
+	return FN(PW,free)(pw);
 }
 
 unsigned FN(PW,dim)(__isl_keep PW *pw, enum isl_dim_type type)
@@ -1518,6 +1557,58 @@ __isl_give PW *FN(PW,mul_isl_int)(__isl_take PW *pw, isl_int v)
 
 	return pw;
 error:
+	FN(PW,free)(pw);
+	return NULL;
+}
+
+/* Multiply the pieces of "pw" by "v" and return the result.
+ */
+__isl_give PW *FN(PW,scale_val)(__isl_take PW *pw, __isl_take isl_val *v)
+{
+	int i;
+
+	if (!pw || !v)
+		goto error;
+
+	if (isl_val_is_one(v)) {
+		isl_val_free(v);
+		return pw;
+	}
+	if (pw && DEFAULT_IS_ZERO && isl_val_is_zero(v)) {
+		PW *zero;
+		isl_space *space = FN(PW,get_space)(pw);
+#ifdef HAS_TYPE
+		zero = FN(PW,ZERO)(space, pw->type);
+#else
+		zero = FN(PW,ZERO)(space);
+#endif
+		FN(PW,free)(pw);
+		isl_val_free(v);
+		return zero;
+	}
+	if (pw->n == 0) {
+		isl_val_free(v);
+		return pw;
+	}
+	pw = FN(PW,cow)(pw);
+	if (!pw)
+		goto error;
+
+#ifdef HAS_TYPE
+	if (isl_val_is_neg(v))
+		pw->type = isl_fold_type_negate(pw->type);
+#endif
+	for (i = 0; i < pw->n; ++i) {
+		pw->p[i].FIELD = FN(EL,scale_val)(pw->p[i].FIELD,
+						    isl_val_copy(v));
+		if (!pw->p[i].FIELD)
+			goto error;
+	}
+
+	isl_val_free(v);
+	return pw;
+error:
+	isl_val_free(v);
 	FN(PW,free)(pw);
 	return NULL;
 }

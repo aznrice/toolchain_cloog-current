@@ -119,6 +119,14 @@ struct isl_context_lex {
 	struct isl_tab *tab;
 };
 
+/* A stack (linked list) of solutions of subtrees of the search space.
+ *
+ * "M" describes the solution in terms of the dimensions of "dom".
+ * The number of columns of "M" is one more than the total number
+ * of dimensions of "dom".
+ *
+ * If "M" is NULL, then there is no solution on "dom".
+ */
 struct isl_partial_sol {
 	int level;
 	struct isl_basic_set *dom;
@@ -307,14 +315,25 @@ static void sol_pop(struct isl_sol *sol)
 			sol_pop_one(sol);
 		} else {
 			struct isl_basic_set *bset;
+			isl_mat *M;
+			unsigned n;
 
+			n = isl_basic_set_dim(partial->next->dom, isl_dim_div);
+			n -= n_div;
 			bset = sol_domain(sol);
-			if (!bset)
-				goto error;
-
 			isl_basic_set_free(partial->next->dom);
 			partial->next->dom = bset;
+			M = partial->next->M;
+			if (M) {
+				M = isl_mat_drop_cols(M, M->n_col - n, n);
+				partial->next->M = M;
+				if (!M)
+					goto error;
+			}
 			partial->next->level = sol->level;
+
+			if (!bset)
+				goto error;
 
 			sol->partial = partial->next;
 			isl_basic_set_free(partial->dom);
@@ -2068,7 +2087,7 @@ static struct isl_tab *tab_for_lexmin(struct isl_basic_map *bmap,
 		tab->n_div = dom->n_div;
 		tab->row_sign = isl_calloc_array(bmap->ctx,
 					enum isl_tab_row_sign, tab->mat->n_row);
-		if (!tab->row_sign)
+		if (tab->mat->n_row && !tab->row_sign)
 			goto error;
 	}
 	if (ISL_F_ISSET(bmap, ISL_BASIC_MAP_EMPTY)) {
@@ -2597,6 +2616,14 @@ error:
 	return NULL;
 }
 
+/* Representation of the context when using generalized basis reduction.
+ *
+ * "shifted" contains the offsets of the unit hypercubes that lie inside the
+ * context.  Any rational point in "shifted" can therefore be rounded
+ * up to an integer point in the context.
+ * If the context is constrained by any equality, then "shifted" is not used
+ * as it would be empty.
+ */
 struct isl_context_gbr {
 	struct isl_context context;
 	struct isl_tab *tab;
@@ -2702,6 +2729,8 @@ static struct isl_basic_set *drop_constant_terms(struct isl_basic_set *bset)
 
 static int use_shifted(struct isl_context_gbr *cgbr)
 {
+	if (!cgbr->tab)
+		return 0;
 	return cgbr->tab->bmap->n_eq == 0 && cgbr->tab->bmap->n_div == 0;
 }
 
@@ -2820,12 +2849,26 @@ error:
 	return NULL;
 }
 
+/* Add the equality described by "eq" to the context.
+ * If "check" is set, then we check if the context is empty after
+ * adding the equality.
+ * If "update" is set, then we check if the samples are still valid.
+ *
+ * We do not explicitly add shifted copies of the equality to
+ * cgbr->shifted since they would conflict with each other.
+ * Instead, we directly mark cgbr->shifted empty.
+ */
 static void context_gbr_add_eq(struct isl_context *context, isl_int *eq,
 		int check, int update)
 {
 	struct isl_context_gbr *cgbr = (struct isl_context_gbr *)context;
 
 	cgbr->tab = add_gbr_eq(cgbr->tab, eq);
+
+	if (cgbr->shifted && !cgbr->shifted->empty && use_shifted(cgbr)) {
+		if (isl_tab_mark_empty(cgbr->shifted) < 0)
+			goto error;
+	}
 
 	if (cgbr->cone && cgbr->cone->n_col != cgbr->cone->n_dead) {
 		if (isl_tab_extend_cons(cgbr->cone, 2) < 0)
@@ -3100,7 +3143,9 @@ static int context_gbr_detect_equalities(struct isl_context *context,
 
 	n_ineq = cgbr->tab->bmap->n_ineq;
 	cgbr->tab = isl_tab_detect_equalities(cgbr->tab, cgbr->cone);
-	if (cgbr->tab && cgbr->tab->bmap->n_ineq > n_ineq)
+	if (!cgbr->tab)
+		return -1;
+	if (cgbr->tab->bmap->n_ineq > n_ineq)
 		propagate_equalities(cgbr, tab, n_ineq);
 
 	return 0;
@@ -3176,6 +3221,9 @@ static void *context_gbr_save(struct isl_context *context)
 {
 	struct isl_context_gbr *cgbr = (struct isl_context_gbr *)context;
 	struct isl_gbr_tab_undo *snap;
+
+	if (!cgbr->tab)
+		return NULL;
 
 	snap = isl_alloc_type(cgbr->tab->mat->ctx, struct isl_gbr_tab_undo);
 	if (!snap)
@@ -3833,6 +3881,24 @@ error:
 	sol->error = 1;
 }
 
+/* Does "sol" contain a pair of partial solutions that could potentially
+ * be merged?
+ *
+ * We currently only check that "sol" is not in an error state
+ * and that there are at least two partial solutions of which the final two
+ * are defined at the same level.
+ */
+static int sol_has_mergeable_solutions(struct isl_sol *sol)
+{
+	if (sol->error)
+		return 0;
+	if (!sol->partial)
+		return 0;
+	if (!sol->partial->next)
+		return 0;
+	return sol->partial->level == sol->partial->next->level;
+}
+
 /* Compute the lexicographic minimum of the set represented by the main
  * tableau "tab" within the context "sol->context_tab".
  *
@@ -3843,10 +3909,20 @@ error:
  * corresponding rows may not be marked as being non-negative.
  * In parts of the context where the added equality does not hold,
  * the main tableau is marked as being empty.
+ *
+ * Before we embark on the actual computation, we save a copy
+ * of the context.  When we return, we check if there are any
+ * partial solutions that can potentially be merged.  If so,
+ * we perform a rollback to the initial state of the context.
+ * The merging of partial solutions happens inside calls to
+ * sol_dec_level that are pushed onto the undo stack of the context.
+ * If there are no partial solutions that can potentially be merged
+ * then the rollback is skipped as it would just be wasted effort.
  */
 static void find_solutions_main(struct isl_sol *sol, struct isl_tab *tab)
 {
 	int row;
+	void *saved;
 
 	if (!tab)
 		goto error;
@@ -3896,7 +3972,14 @@ static void find_solutions_main(struct isl_sol *sol, struct isl_tab *tab)
 		row = tab->n_redundant - 1;
 	}
 
+	saved = sol->context->op->save(sol->context);
+
 	find_solutions(sol, tab);
+
+	if (sol_has_mergeable_solutions(sol))
+		sol->context->op->restore(sol->context, saved);
+	else
+		sol->context->op->discard(saved);
 
 	sol->level = 0;
 	sol_pop(sol);
@@ -4506,7 +4589,7 @@ static union isl_lex_res basic_map_partial_lexopt_symm(
 	ctx = isl_basic_map_get_ctx(bmap);
 	list = isl_alloc_array(ctx, int, bmap->n_ineq);
 	var = isl_vec_alloc(ctx, n_out);
-	if (!list || !var)
+	if ((bmap->n_ineq && !list) || (n_out && !var))
 		goto error;
 
 	list[0] = first;
@@ -5010,7 +5093,7 @@ __isl_give isl_vec *isl_tab_basic_set_non_trivial_lexmin(
 
 	v = isl_vec_alloc(ctx, 1 + tab->n_var);
 	triv = isl_calloc_array(ctx, struct isl_trivial, n_region);
-	if (!v || !triv)
+	if (!v || (n_region && !triv))
 		goto error;
 
 	level = 0;

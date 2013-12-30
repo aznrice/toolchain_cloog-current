@@ -219,6 +219,9 @@ __isl_give isl_aff *isl_local_space_get_div(__isl_keep isl_local_space *ls,
 	if (isl_int_is_zero(ls->div->row[pos][0]))
 		isl_die(isl_local_space_get_ctx(ls), isl_error_invalid,
 			"expression of div unknown", return NULL);
+	if (!isl_local_space_is_set(ls))
+		isl_die(isl_local_space_get_ctx(ls), isl_error_invalid,
+			"cannot represent divs of map spaces", return NULL);
 
 	aff = isl_aff_alloc(isl_local_space_copy(ls));
 	if (!aff)
@@ -718,14 +721,13 @@ __isl_give isl_local_space *isl_local_space_substitute_equalities(
 	unsigned total;
 	unsigned n_div;
 
-	ls = isl_local_space_cow(ls);
 	if (!ls || !eq)
 		goto error;
 
 	total = isl_space_dim(eq->dim, isl_dim_all);
 	if (isl_local_space_dim(ls, isl_dim_all) != total)
 		isl_die(isl_local_space_get_ctx(ls), isl_error_invalid,
-			"dimensions don't match", goto error);
+			"spaces don't match", goto error);
 	total++;
 	n_div = eq->n_div;
 	for (i = 0; i < eq->n_eq; ++i) {
@@ -736,6 +738,12 @@ __isl_give isl_local_space *isl_local_space_substitute_equalities(
 		for (k = 0; k < ls->div->n_row; ++k) {
 			if (isl_int_is_zero(ls->div->row[k][1 + j]))
 				continue;
+			ls = isl_local_space_cow(ls);
+			if (!ls)
+				goto error;
+			ls->div = isl_mat_cow(ls->div);
+			if (!ls->div)
+				goto error;
 			isl_seq_elim(ls->div->row[k] + 1, eq->eq[i], j, total,
 					&ls->div->row[k][0]);
 			normalize_div(ls, k);
@@ -980,7 +988,7 @@ int *isl_local_space_get_active(__isl_keep isl_local_space *ls, isl_int *l)
 	ctx = isl_local_space_get_ctx(ls);
 	total = isl_local_space_dim(ls, isl_dim_all);
 	active = isl_calloc_array(ctx, int, total);
-	if (!active)
+	if (total && !active)
 		return NULL;
 
 	for (i = 0; i < total; ++i)
@@ -1104,7 +1112,7 @@ __isl_give isl_local_space *isl_local_space_preimage_multi_aff(
 			continue;
 		}
 		isl_seq_preimage(res->div->row[n_div_ma + i], ls->div->row[i],
-				    ma, n_div_ma, n_div_ls, f, c1, c2, g, 1);
+				ma, 0, 0, n_div_ma, n_div_ls, f, c1, c2, g, 1);
 		normalize_div(res, n_div_ma + i);
 	}
 

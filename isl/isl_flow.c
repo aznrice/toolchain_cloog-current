@@ -373,7 +373,7 @@ static __isl_give isl_space *space_align_and_join(__isl_take isl_space *left,
  */
 static __isl_give isl_flow *isl_flow_alloc(__isl_keep isl_access_info *acc)
 {
-	int i;
+	int i, n;
 	struct isl_ctx *ctx;
 	struct isl_flow *dep;
 
@@ -385,12 +385,12 @@ static __isl_give isl_flow *isl_flow_alloc(__isl_keep isl_access_info *acc)
 	if (!dep)
 		return NULL;
 
-	dep->dep = isl_calloc_array(ctx, struct isl_labeled_map,
-					2 * acc->n_must + acc->n_may);
-	if (!dep->dep)
+	n = 2 * acc->n_must + acc->n_may;
+	dep->dep = isl_calloc_array(ctx, struct isl_labeled_map, n);
+	if (n && !dep->dep)
 		goto error;
 
-	dep->n_source = 2 * acc->n_must + acc->n_may;
+	dep->n_source = n;
 	for (i = 0; i < acc->n_must; ++i) {
 		isl_space *dim;
 		dim = space_align_and_join(
@@ -1127,7 +1127,6 @@ static __isl_give struct isl_sched_info *sched_info_alloc(
 	isl_space *dim;
 	struct isl_sched_info *info;
 	int i, n;
-	isl_int v;
 
 	if (!map)
 		return NULL;
@@ -1144,16 +1143,21 @@ static __isl_give struct isl_sched_info *sched_info_alloc(
 		return NULL;
 	info->is_cst = isl_alloc_array(ctx, int, n);
 	info->cst = isl_vec_alloc(ctx, n);
-	if (!info->is_cst || !info->cst)
+	if (n && (!info->is_cst || !info->cst))
 		goto error;
 
-	isl_int_init(v);
 	for (i = 0; i < n; ++i) {
-		info->is_cst[i] = isl_map_plain_is_fixed(map, isl_dim_in, i,
-							 &v);
-		info->cst = isl_vec_set_element(info->cst, i, v);
+		isl_val *v;
+
+		v = isl_map_plain_get_val_if_fixed(map, isl_dim_in, i);
+		if (!v)
+			goto error;
+		info->is_cst[i] = !isl_val_is_nan(v);
+		if (info->is_cst[i])
+			info->cst = isl_vec_set_element_val(info->cst, i, v);
+		else
+			isl_val_free(v);
 	}
-	isl_int_clear(v);
 
 	return info;
 error:
@@ -1254,7 +1258,6 @@ static int before(void *first, void *second)
 	struct isl_sched_info *info2 = second;
 	int n1, n2;
 	int i;
-	isl_int v1, v2;
 
 	n1 = isl_vec_size(info1->cst);
 	n2 = isl_vec_size(info2->cst);
@@ -1262,28 +1265,22 @@ static int before(void *first, void *second)
 	if (n2 < n1)
 		n1 = n2;
 
-	isl_int_init(v1);
-	isl_int_init(v2);
 	for (i = 0; i < n1; ++i) {
 		int r;
+		int cmp;
 
 		if (!info1->is_cst[i])
 			continue;
 		if (!info2->is_cst[i])
 			continue;
-		isl_vec_get_element(info1->cst, i, &v1);
-		isl_vec_get_element(info2->cst, i, &v2);
-		if (isl_int_eq(v1, v2))
+		cmp = isl_vec_cmp_element(info1->cst, info2->cst, i);
+		if (cmp == 0)
 			continue;
 
-		r = 2 * i + isl_int_lt(v1, v2);
+		r = 2 * i + (cmp < 0);
 
-		isl_int_clear(v1);
-		isl_int_clear(v2);
 		return r;
 	}
-	isl_int_clear(v1);
-	isl_int_clear(v2);
 
 	return 2 * n1;
 }
@@ -1322,7 +1319,8 @@ static int compute_flow(__isl_take isl_map *map, void *user)
 
 	data->accesses = isl_access_info_alloc(isl_map_copy(map),
 				data->sink_info, &before, data->count);
-	if (!data->sink_info || !data->source_info || !data->accesses)
+	if (!data->sink_info || (data->count && !data->source_info) ||
+	    !data->accesses)
 		goto error;
 	data->count = 0;
 	data->must = 1;

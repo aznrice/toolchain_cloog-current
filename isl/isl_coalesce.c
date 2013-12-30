@@ -1,7 +1,7 @@
 /*
  * Copyright 2008-2009 Katholieke Universiteit Leuven
  * Copyright 2010      INRIA Saclay
- * Copyright 2012      Ecole Normale Superieure
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
@@ -298,50 +298,6 @@ static int check_facets(struct isl_map *map, int i, int j,
 	return fuse(map, i, j, tabs, NULL, ineq_i, NULL, ineq_j, NULL);
 }
 
-/* Both basic maps have at least one inequality with and adjacent
- * (but opposite) inequality in the other basic map.
- * Check that there are no cut constraints and that there is only
- * a single pair of adjacent inequalities.
- * If so, we can replace the pair by a single basic map described
- * by all but the pair of adjacent inequalities.
- * Any additional points introduced lie strictly between the two
- * adjacent hyperplanes and can therefore be integral.
- *
- *        ____			  _____
- *       /    ||\		 /     \
- *      /     || \		/       \
- *      \     ||  \	=>	\        \
- *       \    ||  /		 \       /
- *        \___||_/		  \_____/
- *
- * The test for a single pair of adjancent inequalities is important
- * for avoiding the combination of two basic maps like the following
- *
- *       /|
- *      / |
- *     /__|
- *         _____
- *         |   |
- *         |   |
- *         |___|
- */
-static int check_adj_ineq(struct isl_map *map, int i, int j,
-	struct isl_tab **tabs, int *ineq_i, int *ineq_j)
-{
-	int changed = 0;
-
-	if (any(ineq_i, map->p[i]->n_ineq, STATUS_CUT) ||
-	    any(ineq_j, map->p[j]->n_ineq, STATUS_CUT))
-		/* ADJ INEQ CUT */
-		;
-	else if (count(ineq_i, map->p[i]->n_ineq, STATUS_ADJ_INEQ) == 1 &&
-		 count(ineq_j, map->p[j]->n_ineq, STATUS_ADJ_INEQ) == 1)
-		changed = fuse(map, i, j, tabs, NULL, ineq_i, NULL, ineq_j, NULL);
-	/* else ADJ INEQ TOO MANY */
-
-	return changed;
-}
-
 /* Check if basic map "i" contains the basic map represented
  * by the tableau "tab".
  */
@@ -373,6 +329,155 @@ static int contains(struct isl_map *map, int i, int *ineq_i,
 	return 1;
 }
 
+/* Basic map "i" has an inequality (say "k") that is adjacent
+ * to some inequality of basic map "j".  All the other inequalities
+ * are valid for "j".
+ * Check if basic map "j" forms an extension of basic map "i".
+ *
+ * Note that this function is only called if some of the equalities or
+ * inequalities of basic map "j" do cut basic map "i".  The function is
+ * correct even if there are no such cut constraints, but in that case
+ * the additional checks performed by this function are overkill.
+ *
+ * In particular, we replace constraint k, say f >= 0, by constraint
+ * f <= -1, add the inequalities of "j" that are valid for "i"
+ * and check if the result is a subset of basic map "j".
+ * If so, then we know that this result is exactly equal to basic map "j"
+ * since all its constraints are valid for basic map "j".
+ * By combining the valid constraints of "i" (all equalities and all
+ * inequalities except "k") and the valid constraints of "j" we therefore
+ * obtain a basic map that is equal to their union.
+ * In this case, there is no need to perform a rollback of the tableau
+ * since it is going to be destroyed in fuse().
+ *
+ *
+ *	|\__			|\__
+ *	|   \__			|   \__
+ *	|      \_	=>	|      \__
+ *	|_______| _		|_________\
+ *
+ *
+ *	|\			|\
+ *	| \			| \
+ *	|  \			|  \
+ *	|  |			|   \
+ *	|  ||\		=>      |    \
+ *	|  || \			|     \
+ *	|  ||  |		|      |
+ *	|__||_/			|_____/
+ */
+static int is_adj_ineq_extension(__isl_keep isl_map *map, int i, int j,
+	struct isl_tab **tabs, int *eq_i, int *ineq_i, int *eq_j, int *ineq_j)
+{
+	int k;
+	struct isl_tab_undo *snap;
+	unsigned n_eq = map->p[i]->n_eq;
+	unsigned total = isl_basic_map_total_dim(map->p[i]);
+	int r;
+
+	if (isl_tab_extend_cons(tabs[i], 1 + map->p[j]->n_ineq) < 0)
+		return -1;
+
+	for (k = 0; k < map->p[i]->n_ineq; ++k)
+		if (ineq_i[k] == STATUS_ADJ_INEQ)
+			break;
+	if (k >= map->p[i]->n_ineq)
+		isl_die(isl_map_get_ctx(map), isl_error_internal,
+			"ineq_i should have exactly one STATUS_ADJ_INEQ",
+			return -1);
+
+	snap = isl_tab_snap(tabs[i]);
+
+	if (isl_tab_unrestrict(tabs[i], n_eq + k) < 0)
+		return -1;
+
+	isl_seq_neg(map->p[i]->ineq[k], map->p[i]->ineq[k], 1 + total);
+	isl_int_sub_ui(map->p[i]->ineq[k][0], map->p[i]->ineq[k][0], 1);
+	r = isl_tab_add_ineq(tabs[i], map->p[i]->ineq[k]);
+	isl_seq_neg(map->p[i]->ineq[k], map->p[i]->ineq[k], 1 + total);
+	isl_int_sub_ui(map->p[i]->ineq[k][0], map->p[i]->ineq[k][0], 1);
+	if (r < 0)
+		return -1;
+
+	for (k = 0; k < map->p[j]->n_ineq; ++k) {
+		if (ineq_j[k] != STATUS_VALID)
+			continue;
+		if (isl_tab_add_ineq(tabs[i], map->p[j]->ineq[k]) < 0)
+			return -1;
+	}
+
+	if (contains(map, j, ineq_j, tabs[i]))
+		return fuse(map, i, j, tabs, eq_i, ineq_i, eq_j, ineq_j, NULL);
+
+	if (isl_tab_rollback(tabs[i], snap) < 0)
+		return -1;
+
+	return 0;
+}
+
+
+/* Both basic maps have at least one inequality with and adjacent
+ * (but opposite) inequality in the other basic map.
+ * Check that there are no cut constraints and that there is only
+ * a single pair of adjacent inequalities.
+ * If so, we can replace the pair by a single basic map described
+ * by all but the pair of adjacent inequalities.
+ * Any additional points introduced lie strictly between the two
+ * adjacent hyperplanes and can therefore be integral.
+ *
+ *        ____			  _____
+ *       /    ||\		 /     \
+ *      /     || \		/       \
+ *      \     ||  \	=>	\        \
+ *       \    ||  /		 \       /
+ *        \___||_/		  \_____/
+ *
+ * The test for a single pair of adjancent inequalities is important
+ * for avoiding the combination of two basic maps like the following
+ *
+ *       /|
+ *      / |
+ *     /__|
+ *         _____
+ *         |   |
+ *         |   |
+ *         |___|
+ *
+ * If there are some cut constraints on one side, then we may
+ * still be able to fuse the two basic maps, but we need to perform
+ * some additional checks in is_adj_ineq_extension.
+ */
+static int check_adj_ineq(struct isl_map *map, int i, int j,
+	struct isl_tab **tabs, int *eq_i, int *ineq_i, int *eq_j, int *ineq_j)
+{
+	int count_i, count_j;
+	int cut_i, cut_j;
+
+	count_i = count(ineq_i, map->p[i]->n_ineq, STATUS_ADJ_INEQ);
+	count_j = count(ineq_j, map->p[j]->n_ineq, STATUS_ADJ_INEQ);
+
+	if (count_i != 1 && count_j != 1)
+		return 0;
+
+	cut_i = any(eq_i, 2 * map->p[i]->n_eq, STATUS_CUT) ||
+		any(ineq_i, map->p[i]->n_ineq, STATUS_CUT);
+	cut_j = any(eq_j, 2 * map->p[j]->n_eq, STATUS_CUT) ||
+		any(ineq_j, map->p[j]->n_ineq, STATUS_CUT);
+
+	if (!cut_i && !cut_j && count_i == 1 && count_j == 1)
+		return fuse(map, i, j, tabs, NULL, ineq_i, NULL, ineq_j, NULL);
+
+	if (count_i == 1 && !cut_i)
+		return is_adj_ineq_extension(map, i, j, tabs,
+						eq_i, ineq_i, eq_j, ineq_j);
+
+	if (count_j == 1 && !cut_j)
+		return is_adj_ineq_extension(map, j, i, tabs,
+						eq_j, ineq_j, eq_i, ineq_i);
+
+	return 0;
+}
+
 /* Basic map "i" has an inequality "k" that is adjacent to some equality
  * of basic map "j".  All the other inequalities are valid for "j".
  * Check if basic map "j" forms an extension of basic map "i".
@@ -383,7 +488,7 @@ static int contains(struct isl_map *map, int i, int *ineq_i,
  * map with exactly the other basic map (we already know that this
  * other basic map is included in the extension, because there
  * were no "cut" inequalities in "i") and we can replace the
- * two basic maps by thie extension.
+ * two basic maps by this extension.
  *        ____			  _____
  *       /    || 		 /     |
  *      /     ||  		/      |
@@ -391,7 +496,7 @@ static int contains(struct isl_map *map, int i, int *ineq_i,
  *       \    ||		 \     |
  *        \___||		  \____|
  */
-static int is_extension(struct isl_map *map, int i, int j, int k,
+static int is_adj_eq_extension(struct isl_map *map, int i, int j, int k,
 	struct isl_tab **tabs, int *eq_i, int *ineq_i, int *eq_j, int *ineq_j)
 {
 	int changed = 0;
@@ -1048,11 +1153,12 @@ static int check_adj_eq(struct isl_map *map, int i, int j,
 		/* ADJ EQ TOO MANY */
 		return 0;
 
-	for (k = 0; k < map->p[i]->n_ineq ; ++k)
+	for (k = 0; k < map->p[i]->n_ineq; ++k)
 		if (ineq_i[k] == STATUS_ADJ_EQ)
 			break;
 
-	changed = is_extension(map, i, j, k, tabs, eq_i, ineq_i, eq_j, ineq_j);
+	changed = is_adj_eq_extension(map, i, j, k, tabs,
+					eq_i, ineq_i, eq_j, ineq_j);
 	if (changed)
 		return changed;
 
@@ -1200,7 +1306,15 @@ unbounded:
  *		=> the pair can be replaced by a basic map consisting
  *		   of the valid constraints in both basic maps
  *
- *	4. there is a single adjacent pair of an inequality and an equality,
+ *	4. one basic map has a single adjacent inequality, while the other
+ *	   constraints are "valid".  The other basic map has some
+ *	   "cut" constraints, but replacing the adjacent inequality by
+ *	   its opposite and adding the valid constraints of the other
+ *	   basic map results in a subset of the other basic map
+ *		=> the pair can be replaced by a basic map consisting
+ *		   of the valid constraints in both basic maps
+ *
+ *	5. there is a single adjacent pair of an inequality and an equality,
  *	   the other constraints of the basic map containing the inequality are
  *	   "valid".  Moreover, if the inequality the basic map is relaxed
  *	   and then turned into an equality, then resulting facet lies
@@ -1208,7 +1322,7 @@ unbounded:
  *		=> the pair can be replaced by the basic map containing
  *		   the inequality, with the inequality relaxed.
  *
- *	5. there is a single adjacent pair of an inequality and an equality,
+ *	6. there is a single adjacent pair of an inequality and an equality,
  *	   the other constraints of the basic map containing the inequality are
  *	   "valid".  Moreover, the facets corresponding to both
  *	   the inequality and the equality can be wrapped around their
@@ -1217,7 +1331,7 @@ unbounded:
  *		   of the valid constraints in both basic maps together
  *		   with all wrapping constraints
  *
- *	6. one of the basic maps extends beyond the other by at most one.
+ *	7. one of the basic maps extends beyond the other by at most one.
  *	   Moreover, the facets corresponding to the cut constraints and
  *	   the pieces of the other basic map at offset one from these cut
  *	   constraints can be wrapped around their ridges to include
@@ -1226,7 +1340,7 @@ unbounded:
  *		   of the valid constraints in both basic maps together
  *		   with all wrapping constraints
  *
- *	7. the two basic maps live in adjacent hyperplanes.  In principle
+ *	8. the two basic maps live in adjacent hyperplanes.  In principle
  *	   such sets can always be combined through wrapping, but we impose
  *	   that there is only one such pair, to avoid overeager coalescing.
  *
@@ -1244,7 +1358,7 @@ static int coalesce_local_pair(__isl_keep isl_map *map, int i, int j,
 	int *ineq_j = NULL;
 
 	eq_i = eq_status_in(map->p[i], tabs[j]);
-	if (!eq_i)
+	if (map->p[i]->n_eq && !eq_i)
 		goto error;
 	if (any(eq_i, 2 * map->p[i]->n_eq, STATUS_ERROR))
 		goto error;
@@ -1252,7 +1366,7 @@ static int coalesce_local_pair(__isl_keep isl_map *map, int i, int j,
 		goto done;
 
 	eq_j = eq_status_in(map->p[j], tabs[i]);
-	if (!eq_j)
+	if (map->p[j]->n_eq && !eq_j)
 		goto error;
 	if (any(eq_j, 2 * map->p[j]->n_eq, STATUS_ERROR))
 		goto error;
@@ -1260,7 +1374,7 @@ static int coalesce_local_pair(__isl_keep isl_map *map, int i, int j,
 		goto done;
 
 	ineq_i = ineq_status_in(map->p[i], tabs[i], tabs[j]);
-	if (!ineq_i)
+	if (map->p[i]->n_ineq && !ineq_i)
 		goto error;
 	if (any(ineq_i, map->p[i]->n_ineq, STATUS_ERROR))
 		goto error;
@@ -1268,7 +1382,7 @@ static int coalesce_local_pair(__isl_keep isl_map *map, int i, int j,
 		goto done;
 
 	ineq_j = ineq_status_in(map->p[j], tabs[j], tabs[i]);
-	if (!ineq_j)
+	if (map->p[j]->n_ineq && !ineq_j)
 		goto error;
 	if (any(ineq_j, map->p[j]->n_ineq, STATUS_ERROR))
 		goto error;
@@ -1299,10 +1413,8 @@ static int coalesce_local_pair(__isl_keep isl_map *map, int i, int j,
 		/* BAD ADJ INEQ */
 	} else if (any(ineq_i, map->p[i]->n_ineq, STATUS_ADJ_INEQ) ||
 		   any(ineq_j, map->p[j]->n_ineq, STATUS_ADJ_INEQ)) {
-		if (!any(eq_i, 2 * map->p[i]->n_eq, STATUS_CUT) &&
-		    !any(eq_j, 2 * map->p[j]->n_eq, STATUS_CUT))
-			changed = check_adj_ineq(map, i, j, tabs,
-						 ineq_i, ineq_j);
+		changed = check_adj_ineq(map, i, j, tabs,
+					eq_i, ineq_i, eq_j, ineq_j);
 	} else {
 		if (!any(eq_i, 2 * map->p[i]->n_eq, STATUS_CUT) &&
 		    !any(eq_j, 2 * map->p[j]->n_eq, STATUS_CUT))
@@ -1384,7 +1496,7 @@ static int coalesce_subset(__isl_keep isl_map *map, int i, int j,
 		goto error;
 
 	eq_i = eq_status_in(bmap, tabs[j]);
-	if (!eq_i)
+	if (bmap->n_eq && !eq_i)
 		goto error;
 	if (any(eq_i, 2 * bmap->n_eq, STATUS_ERROR))
 		goto error;
@@ -1392,7 +1504,7 @@ static int coalesce_subset(__isl_keep isl_map *map, int i, int j,
 		goto done;
 
 	ineq_i = ineq_status_in(bmap, NULL, tabs[j]);
-	if (!ineq_i)
+	if (bmap->n_ineq && !ineq_i)
 		goto error;
 	if (any(ineq_i, bmap->n_ineq, STATUS_ERROR))
 		goto error;
@@ -1423,7 +1535,7 @@ error:
  *
  * If the two basic maps have the same number of divs, then
  * they must necessarily be different.  Otherwise, we would have
- * called coalesce_local_pair.  We therefore don't do try anyhing
+ * called coalesce_local_pair.  We therefore don't try anything
  * in this case.
  *
  * We first check if the divs of "i" are all known and form a subset
@@ -1458,7 +1570,7 @@ static int check_coalesce_subset(__isl_keep isl_map *map, int i, int j,
 
 	exp1 = isl_alloc_array(ctx, int, div_i->n_row);
 	exp2 = isl_alloc_array(ctx, int, div_j->n_row);
-	if (!exp1 || !exp2)
+	if ((div_i->n_row && !exp1) || (div_j->n_row && !exp2))
 		goto error;
 
 	div = isl_merge_divs(div_i, div_j, exp1, exp2);
@@ -1533,6 +1645,16 @@ error:
 /* For each pair of basic maps in the map, check if the union of the two
  * can be represented by a single basic map.
  * If so, replace the pair by the single basic map and start over.
+ *
+ * Since we are constructing the tableaus of the basic maps anyway,
+ * we exploit them to detect implicit equalities and redundant constraints.
+ * This also helps the coalescing as it can ignore the redundant constraints.
+ * In order to avoid confusion, we make all implicit equalities explicit
+ * in the basic maps.  We don't call isl_basic_map_gauss, though,
+ * as that may affect the number of constraints.
+ * This means that we have to call isl_basic_map_gauss at the end
+ * of the computation to ensure that the basic maps are not left
+ * in an unexpected state.
  */
 struct isl_map *isl_map_coalesce(struct isl_map *map)
 {
@@ -1562,6 +1684,10 @@ struct isl_map *isl_map_coalesce(struct isl_map *map)
 		if (!ISL_F_ISSET(map->p[i], ISL_BASIC_MAP_NO_IMPLICIT))
 			if (isl_tab_detect_implicit_equalities(tabs[i]) < 0)
 				goto error;
+		map->p[i] = isl_tab_make_equalities_explicit(tabs[i],
+								map->p[i]);
+		if (!map->p[i])
+			goto error;
 		if (!ISL_F_ISSET(map->p[i], ISL_BASIC_MAP_NO_REDUNDANT))
 			if (isl_tab_detect_redundant(tabs[i]) < 0)
 				goto error;
@@ -1576,6 +1702,7 @@ struct isl_map *isl_map_coalesce(struct isl_map *map)
 		for (i = 0; i < map->n; ++i) {
 			map->p[i] = isl_basic_map_update_from_tab(map->p[i],
 								    tabs[i]);
+			map->p[i] = isl_basic_map_gauss(map->p[i], NULL);
 			map->p[i] = isl_basic_map_finalize(map->p[i]);
 			if (!map->p[i])
 				goto error;

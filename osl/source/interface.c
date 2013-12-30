@@ -65,12 +65,19 @@
 #include <string.h>
 #include <osl/extensions/textual.h>
 #include <osl/extensions/comment.h>
+#include <osl/extensions/null.h>
 #include <osl/extensions/scatnames.h>
 #include <osl/extensions/arrays.h>
 #include <osl/extensions/coordinates.h>
+#include <osl/extensions/clay.h>
+#include <osl/extensions/dependence.h>
+#include <osl/extensions/symbols.h>
 #include <osl/extensions/irregular.h>
+#include <osl/extensions/extbody.h>
+#include <osl/extensions/loop.h>
 #include <osl/strings.h>
 #include <osl/body.h>
+#include <osl/relation.h>
 #include <osl/interface.h>
 
 
@@ -230,9 +237,6 @@ void osl_interface_free(osl_interface_p interface) {
   osl_interface_p tmp;
   int i = 0;
  
-  if (interface == NULL)
-    return;
-
   while (interface != NULL) {
     tmp = interface->next;
     if (interface->URI != NULL)
@@ -247,6 +251,24 @@ void osl_interface_free(osl_interface_p interface) {
 /*+***************************************************************************
  *                            Processing functions                           *
  *****************************************************************************/
+
+
+/**
+ * osl_interface_number function:
+ * this function returns the number of statements in the interface list
+ * provided as parameter.
+ * \param[in] interface The first element of the interface list.
+ * \return The number of statements in the interface list.
+ */
+int osl_interface_number(osl_interface_p interface) {
+  int number = 0;
+
+  while (interface != NULL) {
+    number++;
+    interface = interface->next;
+  }
+  return number;
+}
 
 
 /**
@@ -337,11 +359,17 @@ int osl_interface_equal(osl_interface_p interface1,
  */
 osl_interface_p
 osl_interface_lookup(osl_interface_p list, char * URI) {
-  while (list != NULL) {
-    if ((list->URI != NULL) && (!strcmp(list->URI, URI)))
-      return list;
 
-    list = list->next;
+  if (URI == NULL) {
+    OSL_warning("lookup for a NULL URI");
+  }
+  else {
+    while (list != NULL) {
+      if ((list->URI != NULL) && (!strcmp(list->URI, URI)))
+        return list;
+
+      list = list->next;
+    }
   }
 
   return NULL;
@@ -360,15 +388,22 @@ osl_interface_p osl_interface_get_default_registry() {
   // Internal generics
   osl_interface_add(&registry, osl_strings_interface());
   osl_interface_add(&registry, osl_body_interface());
-  
+  osl_interface_add(&registry, osl_relation_interface());
+
   // Extensions
   osl_interface_add(&registry, osl_textual_interface());
   osl_interface_add(&registry, osl_comment_interface());
+  osl_interface_add(&registry, osl_null_interface());
   osl_interface_add(&registry, osl_scatnames_interface());
   osl_interface_add(&registry, osl_arrays_interface());
   osl_interface_add(&registry, osl_coordinates_interface());
+  osl_interface_add(&registry, osl_clay_interface());
+  osl_interface_add(&registry, osl_dependence_interface());
+  osl_interface_add(&registry, osl_symbols_interface());
+  osl_interface_add(&registry, osl_extbody_interface());
+  osl_interface_add(&registry, osl_loop_interface());
   //osl_interface_add(&registry, osl_irregular_interface());
-  
+
   return registry;
 }
 

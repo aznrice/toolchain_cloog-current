@@ -68,6 +68,7 @@
 #include <osl/util.h>
 #include <osl/interface.h>
 #include <osl/generic.h>
+#include <osl/extensions/arrays.h>
 
 
 /*+***************************************************************************
@@ -148,6 +149,44 @@ void osl_generic_dump(FILE * file, osl_generic_p generic) {
 
 
 /**
+ * osl_generic_sprint function:
+ * this function prints the content of an osl_generic_t structure
+ * (*strings) into a string (returned) in the OpenScop textual format.
+ * \param[in] generic  The generic structure which has to be printed.
+ * \return A string containing the OpenScop dump of the generic structure.
+ */
+char * osl_generic_sprint(osl_generic_p generic) {
+  int high_water_mark = OSL_MAX_STRING;
+  char * string = NULL, * content;
+  char buffer[OSL_MAX_STRING];
+
+  OSL_malloc(string, char *, high_water_mark * sizeof(char));
+  string[0] = '\0';
+
+  while (generic != NULL) {
+    if (generic->interface != NULL) {
+      content = generic->interface->sprint(generic->data);
+      if (content != NULL) {
+        sprintf(buffer, "<%s>\n", generic->interface->URI);
+        osl_util_safe_strcat(&string, buffer, &high_water_mark);
+        osl_util_safe_strcat(&string, content, &high_water_mark);
+        free(content);
+        sprintf(buffer, "</%s>\n", generic->interface->URI);
+        osl_util_safe_strcat(&string, buffer, &high_water_mark);
+      }
+    }
+    generic = generic->next;
+    if (generic != NULL) {
+      sprintf(buffer, "\n");
+      osl_util_safe_strcat(&string, buffer, &high_water_mark);
+    }
+  }
+
+  return string;
+}
+
+
+/**
  * osl_generic_print function:
  * this function prints the content of an osl_generic_t structure
  * (*generic) into a string (returned) in the OpenScop format.
@@ -157,22 +196,30 @@ void osl_generic_dump(FILE * file, osl_generic_p generic) {
 void osl_generic_print(FILE * file, osl_generic_p generic) {
   char * string;
   
-  if (generic == NULL)
-    return;
+  string = osl_generic_sprint(generic);
+  if (string != NULL) {
+    fprintf(file, "%s", string);
+    free(string);
+  }
+}
 
-  while (generic != NULL) {
-    if (generic->interface != NULL) {
-      string = generic->interface->sprint(generic->data);
-      if (string != NULL) {
-        fprintf(file, "<%s>\n", generic->interface->URI);
-        fprintf(file, "%s", string);
-        fprintf(file, "</%s>\n", generic->interface->URI);
-        free(string);
-      }
-    }
-    generic = generic->next;
-    if (generic != NULL)
-      fprintf(file, "\n");
+
+/**
+ * osl_generic_print_options_scoplib function:
+ * this function prints the options sections (only arrays in the
+ * SCoPLib format)
+ * \param[in] file    File where the information has to be printed.
+ * \param[in] generic The generic structure to print.
+ */
+void osl_generic_print_options_scoplib(FILE * file, osl_generic_p generic) {
+  char * string;
+
+  osl_generic_p arrays = osl_generic_lookup(generic, OSL_URI_ARRAYS);
+  
+  string = osl_arrays_sprint((osl_arrays_p) arrays);
+  if (string != NULL) {
+    fprintf(file, "<arrays>\n%s</arrays>\n", string);
+    free(string);
   }
 }
 
@@ -184,34 +231,66 @@ void osl_generic_print(FILE * file, osl_generic_p generic) {
 
 /**
  * osl_generic_sread function:
- * this function reads a list of generics from a string complying to the
- * OpenScop textual format and a list of known interfaces. It returns a
- * pointer to the corresponding list of generic structures.
- * \param[in] string   The string where to read a list of data.
- * \param[in] registry The list of known interfaces (others are ignored).
+ * this function reads a list of generic structure from a string complying to
+ * the OpenScop textual format and returns a pointer to this generic structure.
+ * The input parameter is updated to the position in the input string this
+ * function reach right after reading the generic structure.
+ * \param[in,out] input    The input string where to find a list of generic.
+ *                         Updated to the position after what has been read.
+ * \param[in]     registry The list of known interfaces (others are ignored).
  * \return A pointer to the generic information list that has been read.
  */
-osl_generic_p osl_generic_sread(char * string, osl_interface_p registry) {
+osl_generic_p osl_generic_sread(char ** input, osl_interface_p registry) {
   osl_generic_p generic = NULL, new;
-  char * content, * start;
-  void * data;
 
-  while (registry != NULL) {
-    content = osl_util_tag_content(string, registry->URI);
-    if (content != NULL) {
-      start = content;
-      data = registry->sread(&content);
-      if (data != NULL) {
-        new = osl_generic_malloc();
-        new->interface = osl_interface_nclone(registry, 1);
-        new->data = data;
-        osl_generic_add(&generic, new);
-      }
-      free(start);
-    }
-    registry = registry->next;
+  while (**input != '\0') {
+    new = osl_generic_sread_one(input, registry);
+    osl_generic_add(&generic, new);
   }
   
+  return generic;
+}
+
+
+/**
+ * osl_generic_sread_one function:
+ * this function reads one generic structure from a string complying to the
+ * OpenScop textual format and returns a pointer to this generic structure.
+ * The input parameter is updated to the position in the input string this
+ * function reach right after reading the generic structure.
+ * \param[in,out] input    The input string where to find a generic.
+ *                         Updated to the position after what has been read.
+ * \param[in]     registry The list of known interfaces (others are ignored).
+ * \return A pointer to the generic structure that has been read.
+ */
+osl_generic_p osl_generic_sread_one(char ** input, osl_interface_p registry) {
+  char * tag;
+  char * content, * temp;
+  osl_generic_p generic = NULL;
+  osl_interface_p interface;
+
+  tag = osl_util_read_tag(NULL, input);
+  if ((tag == NULL) || (strlen(tag) < 1) || (tag[0] == '/')) {
+    OSL_debug("empty tag name or closing tag instead of an opening one");
+    return NULL;
+  }
+
+  content = osl_util_read_uptoendtag(NULL, input, tag);
+  interface = osl_interface_lookup(registry, tag);
+
+  temp = content;
+  if (interface == NULL) {
+    OSL_warning("unsupported generic");
+    fprintf(stderr, "[osl] Warning: unknown URI \"%s\".\n", tag);
+  }
+  else {
+    generic = osl_generic_malloc();
+    generic->interface = osl_interface_nclone(interface, 1);
+    generic->data = interface->sread(&temp);
+  }
+
+  free(content);
+  free(tag);
   return generic;
 }
 
@@ -239,7 +318,7 @@ osl_generic_p osl_generic_read_one(FILE * file, osl_interface_p registry) {
     return NULL;
   }
 
-  content = osl_util_read_uptoendtag(file, tag);
+  content = osl_util_read_uptoendtag(file, NULL, tag);
   interface = osl_interface_lookup(registry, tag);
 
   temp = content;
@@ -269,11 +348,12 @@ osl_generic_p osl_generic_read_one(FILE * file, osl_interface_p registry) {
  * \return A pointer to the generic information list that has been read.
  */
 osl_generic_p osl_generic_read(FILE * file, osl_interface_p registry) {
-  char * generic_string;
+  char * generic_string, * temp;
   osl_generic_p generic_list;
 
-  generic_string = osl_util_read_uptotag(file, OSL_TAG_END_SCOP);
-  generic_list = osl_generic_sread(generic_string, registry);
+  generic_string = osl_util_read_uptoendtag(file, NULL, OSL_URI_SCOP);
+  temp = generic_string;
+  generic_list = osl_generic_sread(&temp, registry);
   free(generic_string);
   return generic_list;
 }
@@ -317,6 +397,65 @@ void osl_generic_add(osl_generic_p * list, osl_generic_p generic) {
       *list = generic;
     }
   }
+}
+
+/**
+ * osl_generic_remove_node function:
+ * this functions removes a given generic from a generic list
+ * \param[in] list    Address of a generic list
+ * \param[in] generic Pointer to the generic to be removed
+ *                    Assumes a single node is to be removed.
+ */
+void osl_generic_remove_node(osl_generic_p * list, osl_generic_p generic) {
+
+  osl_generic_p tmp = *list;
+  
+  if (generic != NULL) {
+
+    if (*list != NULL) {
+      //target is the first element of list
+      if(tmp==generic){
+        *list = generic->next;
+        generic->next=NULL; //free below removes the whole list!
+        osl_generic_free(generic); 
+      }
+
+      //find target
+      while (tmp->next!=generic && tmp->next != NULL)
+        tmp = tmp->next;
+
+      if(tmp->next==generic){
+        tmp->next = generic->next;
+        generic->next=NULL; //free below removes the whole list!
+        osl_generic_free(generic); 
+      }
+      else  //target not found
+        OSL_warning("generic not found in the list\n");
+    }
+
+  }
+}
+
+/**
+ * osl_generic_remove function:
+ * given a URI, this function removes that generic from the list
+ * \param[in] list    Address of a generic list
+ * \param[in] URI     Pointer to the URI string
+ */
+void osl_generic_remove(osl_generic_p *list, char * URI){
+
+ osl_generic_p tmp = *list;
+
+ while(tmp != NULL){
+   if(osl_generic_has_URI(tmp, URI))
+     break;
+   tmp = tmp->next;
+ }
+
+ if(tmp!=NULL){
+   osl_generic_remove_node(list, tmp);
+ }
+
 }
 
 
@@ -369,6 +508,24 @@ void osl_generic_free(osl_generic_p generic) {
 /*+***************************************************************************
  *                            Processing functions                           *
  *****************************************************************************/
+
+
+/**
+ * osl_generic_number function:
+ * this function returns the number of statements in the generic list
+ * provided as parameter.
+ * \param[in] generic The first element of the generic list.
+ * \return The number of statements in the generic list.
+ */
+int osl_generic_number(osl_generic_p generic) {
+  int number = 0;
+
+  while (generic != NULL) {
+    number++;
+    generic = generic->next;
+  }
+  return number;
+}
 
 
 /**
