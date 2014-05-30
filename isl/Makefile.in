@@ -66,8 +66,8 @@ DIST_COMMON = README $(am__configure_deps) $(pkginclude_HEADERS) \
 	$(srcdir)/bound_test.sh.in $(srcdir)/codegen_test.sh.in \
 	$(srcdir)/isl_config.h.in $(srcdir)/pip_test.sh.in \
 	$(top_srcdir)/configure $(top_srcdir)/include/isl/config.h.in \
-	AUTHORS ChangeLog config.guess config.sub depcomp install-sh \
-	ltmain.sh missing
+	AUTHORS ChangeLog compile config.guess config.sub depcomp \
+	install-sh ltmain.sh missing
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_c___attribute__.m4 \
 	$(top_srcdir)/m4/ax_cc_maxopt.m4 \
